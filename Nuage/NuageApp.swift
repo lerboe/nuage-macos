@@ -180,7 +180,7 @@ struct NuageApp: App {
             else {
                 LoginView { accessToken, expiryDate in
                     let defaults = UserDefaults.standard
-                    defaults.set(accessToken, forKey: accessTokenKey)
+                    Keychain.set(accessToken, forKey: accessTokenKey)
                     defaults.set(expiryDate, forKey: accessTokenExpiryDateKey)
                     SoundCloud.shared.accessToken = accessToken
                     loggedIn = true
@@ -269,14 +269,20 @@ struct NuageApp: App {
                 print("Failed to load user from UserDefaults: \(error)")
             }
         }
-        let token = defaults.object(forKey: accessTokenKey)
+        // Migrate any token still stored in plaintext by an earlier version
+        if let legacyToken = defaults.string(forKey: accessTokenKey) {
+            Keychain.set(legacyToken, forKey: accessTokenKey)
+            defaults.removeObject(forKey: accessTokenKey)
+        }
+
+        let token = Keychain.string(forKey: accessTokenKey)
         let expiryDate = defaults.object(forKey: accessTokenExpiryDateKey)
-        
+
         _loggedIn = State(initialValue: false)
-        if let token = token as? String {
+        if let token = token {
             if let exipryDate = expiryDate as? Date, exipryDate < Date() {
-                defaults.set(nil, forKey: accessTokenKey)
-                defaults.set(nil, forKey: accessTokenExpiryDateKey)
+                Keychain.set(nil, forKey: accessTokenKey)
+                defaults.removeObject(forKey: accessTokenExpiryDateKey)
             }
             else {
                 SoundCloud.shared.accessToken = token
