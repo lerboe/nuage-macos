@@ -284,52 +284,27 @@ struct NuageApp: App {
             }
         }
         
-        if let data = defaults.data(forKey: playlistsKey) {
-            playlists = try! JSONDecoder().decode([AnyPlaylist].self, from: data)
-        }
-        else {
-            playlists = []
-        }
+        // A cache that fails to decode is only a cache miss, the content is
+        // refetched on appear. Never let it take the app down on launch.
+        playlists = defaults.cachedValue([AnyPlaylist].self, forKey: playlistsKey) ?? []
+        likes = defaults.cachedValue([Track].self, forKey: likesKey) ?? []
+        posts = defaults.cachedValue([Post].self, forKey: postsKey) ?? []
         
-        if let data = defaults.data(forKey: likesKey) {
-            likes = try! JSONDecoder().decode([Track].self, from: data)
-        }
-        else {
-            likes = []
-        }
-        
-        if let data = defaults.data(forKey: postsKey) {
-            posts = try! JSONDecoder().decode([Post].self, from: data)
-        }
-        else {
-            posts = []
-        }
-        
-        playlists.publisher.sink { playlists in
-            let data = try! JSONEncoder().encode(playlists)
-            defaults.set(data, forKey: playlistsKey)
-        }
-        .store(in: &subscriptions)
-        
-        likes.publisher.sink { likes in
-            let data = try! JSONEncoder().encode(likes)
-            defaults.set(data, forKey: likesKey)
-        }
-        .store(in: &subscriptions)
-        
-        posts.publisher.sink { posts in
-            let data = try! JSONEncoder().encode(posts)
-            defaults.set(data, forKey: postsKey)
-        }
-        .store(in: &subscriptions)
-        
+        playlists.publisher.sink { defaults.cache($0, forKey: playlistsKey) }
+            .store(in: &subscriptions)
+
+        likes.publisher.sink { defaults.cache($0, forKey: likesKey) }
+            .store(in: &subscriptions)
+
+        posts.publisher.sink { defaults.cache($0, forKey: postsKey) }
+            .store(in: &subscriptions)
+
         SoundCloud.shared.$user.sink { user in
             if let user = user {
-                let data = try! JSONEncoder().encode(user)
-                defaults.set(data, forKey: userKey)
+                defaults.cache(user, forKey: userKey)
             }
             else {
-                defaults.set(nil, forKey: userKey)
+                defaults.removeObject(forKey: userKey)
             }
         }
         .store(in: &subscriptions)

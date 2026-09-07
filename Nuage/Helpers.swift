@@ -283,3 +283,34 @@ extension String {
     }
 
 }
+
+extension UserDefaults {
+
+    /// Decodes a cached value, treating any failure as a cache miss.
+    ///
+    /// These caches are a launch-time convenience, the real content is
+    /// refetched from the API. A stale or malformed entry left behind by an
+    /// older build must not crash the app.
+    func cachedValue<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
+        guard let data = data(forKey: key) else { return nil }
+
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        }
+        catch {
+            print("Failed to decode cached \(type) for '\(key)', discarding: \(error)")
+            removeObject(forKey: key)
+            return nil
+        }
+    }
+
+    func cache<T: Encodable>(_ value: T, forKey key: String) {
+        do {
+            set(try JSONEncoder().encode(value), forKey: key)
+        }
+        catch {
+            print("Failed to encode \(T.self) for '\(key)': \(error)")
+        }
+    }
+
+}
