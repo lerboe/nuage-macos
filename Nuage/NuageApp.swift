@@ -149,6 +149,7 @@ struct NuageApp: App {
             if loggedIn {
                 MainView()
                     .frame(minWidth: 600, minHeight: 400)
+                    .persistWindowFrame()
                     .environmentObject(player)
                     .environmentObject(commandSubjects)
                     .environment(\.showCreatedPlaylists, showCreatedPlaylists)
@@ -185,6 +186,7 @@ struct NuageApp: App {
                     SoundCloud.shared.accessToken = accessToken
                     loggedIn = true
                 }
+                .persistWindowFrame("login")
             }
         }
         .defaultSize(width: 800, height: 400)
