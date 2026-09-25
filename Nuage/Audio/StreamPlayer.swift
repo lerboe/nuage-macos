@@ -26,7 +26,7 @@ class StreamPlayer: ObservableObject {
     
     private var subscriptions = Set<AnyCancellable>()
     
-    private var player: AVPlayer
+    private(set) var player: AVPlayer
     private(set) var queue = [Track]() {
         didSet {
             reloadQueueOrder()

@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import AVKit
 import Combine
 import SoundCloud
 
@@ -133,6 +134,10 @@ struct PlayerView: View {
             .if(showingVolumeControls) { $0.foregroundColor(.primary) }
             .popover(isPresented: $showingVolumeControls, content: volumeControls)
             
+            RoutePicker(player: player.player)
+                .frame(width: 20, height: 20)
+                .help("Output Device")
+            
             Button(action: { self.showingQueue.toggle() }) {
                 resizableImage(name: "text.line.first.and.arrowtriangle.forward")
             }
@@ -219,6 +224,24 @@ struct PlayerView: View {
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: width, height: height)
+    }
+    
+}
+
+/// Routes only Nuage's audio to an AirPlay device, leaving the system output untouched.
+private struct RoutePicker: NSViewRepresentable {
+    
+    var player: AVPlayer
+    
+    func makeNSView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.isRoutePickerButtonBordered = false
+        view.player = player
+        return view
+    }
+    
+    func updateNSView(_ view: AVRoutePickerView, context: Context) {
+        view.player = player
     }
     
 }
