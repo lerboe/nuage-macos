@@ -19,9 +19,11 @@ struct MainView: View {
     @State private var blockingNavigationPath: NavigationPath?
     
     @State private var searchQuery = ""
+    @FocusState private var isSearchFocused: Bool
     @State private var subscriptions = Set<AnyCancellable>()
-    
+
 //    @EnvironmentObject private var commands: Commands
+    @EnvironmentObject private var commandSubjects: CommandSubject
     @EnvironmentObject private var player: StreamPlayer
     @Environment(\.playlists) private var playlists: [AnyPlaylist]
     
@@ -70,6 +72,9 @@ struct MainView: View {
         }
         .toolbarRole(.editor)
         .toolbar(content: toolbar)
+        .searchable(text: $searchQuery, placement: .toolbar)
+        .searchFocused($isSearchFocused)
+        .onReceive(commandSubjects.search) { isSearchFocused = true }
         .touchBar { TouchBar() }
         .onChange(of: sidebarSelection) { _ in
             navigationPath = NavigationPath()
@@ -156,13 +161,7 @@ struct MainView: View {
     }
     
     @ToolbarContentBuilder private func toolbar() -> some ToolbarContent {
-        ToolbarItem(placement: .principal) {
-            TextField("Search", text: $searchQuery)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 250)
-        }
         ToolbarItemGroup {
-            Spacer()
             Button {
                 if let user = soundCloud.user {
                     navigationPath.append(user)
@@ -188,6 +187,7 @@ struct MainView_Previews: PreviewProvider {
         
         MainView()
             .environmentObject(player)
+            .environmentObject(CommandSubject())
 //            .environmentObject(Commands())
     }
     

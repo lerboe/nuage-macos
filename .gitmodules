@@ -1,6 +1,3 @@
-[submodule "StackNavigationView"]
-	path = StackNavigationView
-	url = https://github.com/lbrndnr/StackNavigationView
 [submodule "SoundCloud"]
 	path = SoundCloud
 	url = https://github.com/lbrndnr/SoundCloud
