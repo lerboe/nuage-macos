@@ -11,7 +11,7 @@ import Security
 /// user could read it straight off disk.
 enum Keychain {
 
-    private static let service = "ch.laurinbrandner.nuage"
+    private static let service = Bundle.main.bundleIdentifier ?? "ch.laurinbrandner.nuage"
 
     static func string(forKey key: String) -> String? {
         var query = baseQuery(forKey: key)
@@ -33,10 +33,7 @@ enum Keychain {
             return
         }
 
-        let attributes: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
-        ]
+        let attributes: [String: Any] = [kSecValueData as String: data]
 
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound {

@@ -146,48 +146,54 @@ struct NuageApp: App {
     
     var body: some Scene {
         WindowGroup {
-            if loggedIn {
-                MainView()
-                    .frame(minWidth: 600, minHeight: 400)
-                    .persistWindowFrame()
-                    .environmentObject(player)
-                    .environmentObject(commandSubjects)
-                    .environment(\.showCreatedPlaylists, showCreatedPlaylists)
-                    .environment(\.showLikedPlaylists, showLikedPlaylists)
-                    .environment(\.playlists, playlists)
-                    .environment(\.likes, likes)
-                    .environment(\.posts, posts)
-                    .environment(\.toggleLikeTrack, toggleLike)
-                    .environment(\.toggleRepostTrack, toggleRepost)
-                    .environment(\.toggleLikePlaylist, toggleLike)
-                    .environment(\.toggleRepostPlaylist, toggleRepost)
-                    .onAppear {
-                        reloadLibrary()
-                        reloadLikes()
-                        reloadPosts()
-                        
-                        // Whenever the current stream changes, add it to the SoundCloud history
-                        player.$currentStream
-                            .filter { $0 != nil}
-                            .flatMap { SoundCloud.shared.perform(.addToHistory($0!)) }
-                            .sink(receiveCompletion: { completion in
-                                if case let .failure(error) = completion {
-                                    print("Failed to add track to history: \(error)")
-                                }
-                            }, receiveValue: { _ in })
-                            .store(in: &subscriptions)
-                    }
-            }
-            else {
-                LoginView { accessToken, expiryDate in
-                    let defaults = UserDefaults.standard
-                    Keychain.set(accessToken, forKey: accessTokenKey)
-                    defaults.set(expiryDate, forKey: accessTokenExpiryDateKey)
-                    SoundCloud.shared.accessToken = accessToken
-                    loggedIn = true
+            // A ZStack rather than a Group, which would apply the modifier
+            // to each branch separately. Login and main share one window.
+            ZStack {
+                if loggedIn {
+                    MainView()
+                        .frame(minWidth: 600, minHeight: 400)
+                        .environmentObject(player)
+                        .environmentObject(commandSubjects)
+                        .environment(\.showCreatedPlaylists, showCreatedPlaylists)
+                        .environment(\.showLikedPlaylists, showLikedPlaylists)
+                        .environment(\.playlists, playlists)
+                        .environment(\.likes, likes)
+                        .environment(\.posts, posts)
+                        .environment(\.toggleLikeTrack, toggleLike)
+                        .environment(\.toggleRepostTrack, toggleRepost)
+                        .environment(\.toggleLikePlaylist, toggleLike)
+                        .environment(\.toggleRepostPlaylist, toggleRepost)
+                        .onChange(of: playlists) { UserDefaults.standard.cache($0, as: [AnyPlaylist].self, forKey: playlistsKey) }
+                        .onChange(of: likes) { UserDefaults.standard.cache($0, as: [Track].self, forKey: likesKey) }
+                        .onChange(of: posts) { UserDefaults.standard.cache($0, as: [Post].self, forKey: postsKey) }
+                        .onAppear {
+                            reloadLibrary()
+                            reloadLikes()
+                            reloadPosts()
+                            
+                            // Whenever the current stream changes, add it to the SoundCloud history
+                            player.$currentStream
+                                .filter { $0 != nil}
+                                .flatMap { SoundCloud.shared.perform(.addToHistory($0!)) }
+                                .sink(receiveCompletion: { completion in
+                                    if case let .failure(error) = completion {
+                                        print("Failed to add track to history: \(error)")
+                                    }
+                                }, receiveValue: { _ in })
+                                .store(in: &subscriptions)
+                        }
                 }
-                .persistWindowFrame("login")
+                else {
+                    LoginView { accessToken, expiryDate in
+                        let defaults = UserDefaults.standard
+                        Keychain.set(accessToken, forKey: accessTokenKey)
+                        defaults.set(expiryDate, forKey: accessTokenExpiryDateKey)
+                        SoundCloud.shared.accessToken = accessToken
+                        loggedIn = true
+                    }
+                }
             }
+            .persistWindowFrame()
         }
         .defaultSize(width: 800, height: 400)
         .commands(content: commands)
@@ -262,33 +268,30 @@ struct NuageApp: App {
         URLSession.shared.configuration.requestCachePolicy = .returnCacheDataElseLoad
         
         let defaults = UserDefaults.standard
-        if let data = defaults.data(forKey: userKey) {
-            do {
-                SoundCloud.shared.user = try JSONDecoder().decode(User.self, from: data)
-            }
-            catch {
-                defaults.removeObject(forKey: userKey)
-                print("Failed to load user from UserDefaults: \(error)")
-            }
-        }
-        // Migrate any token still stored in plaintext by an earlier version
+        SoundCloud.shared.user = defaults.cachedValue(User.self, forKey: userKey)
+
+        // Migrate a token still stored in plaintext by an earlier version,
+        // unless the Keychain already holds one. Never leave the plaintext copy behind.
         if let legacyToken = defaults.string(forKey: accessTokenKey) {
-            Keychain.set(legacyToken, forKey: accessTokenKey)
+            if Keychain.string(forKey: accessTokenKey) == nil {
+                Keychain.set(legacyToken, forKey: accessTokenKey)
+            }
             defaults.removeObject(forKey: accessTokenKey)
         }
 
         let token = Keychain.string(forKey: accessTokenKey)
-        let expiryDate = defaults.object(forKey: accessTokenExpiryDateKey)
+        let expiryDate = defaults.object(forKey: accessTokenExpiryDateKey) as? Date
 
         _loggedIn = State(initialValue: false)
         if let token = token {
-            if let exipryDate = expiryDate as? Date, exipryDate < Date() {
-                Keychain.set(nil, forKey: accessTokenKey)
-                defaults.removeObject(forKey: accessTokenExpiryDateKey)
-            }
-            else {
+            if let expiryDate = expiryDate, expiryDate >= Date() {
                 SoundCloud.shared.accessToken = token
                 _loggedIn = State(initialValue: true)
+            }
+            else {
+                // Expired, or no expiry date to check against
+                Keychain.set(nil, forKey: accessTokenKey)
+                defaults.removeObject(forKey: accessTokenExpiryDateKey)
             }
         }
         
@@ -298,18 +301,9 @@ struct NuageApp: App {
         likes = defaults.cachedValue([Track].self, forKey: likesKey) ?? []
         posts = defaults.cachedValue([Post].self, forKey: postsKey) ?? []
         
-        playlists.publisher.sink { defaults.cache($0, forKey: playlistsKey) }
-            .store(in: &subscriptions)
-
-        likes.publisher.sink { defaults.cache($0, forKey: likesKey) }
-            .store(in: &subscriptions)
-
-        posts.publisher.sink { defaults.cache($0, forKey: postsKey) }
-            .store(in: &subscriptions)
-
         SoundCloud.shared.$user.sink { user in
             if let user = user {
-                defaults.cache(user, forKey: userKey)
+                defaults.cache(user, as: User.self, forKey: userKey)
             }
             else {
                 defaults.removeObject(forKey: userKey)

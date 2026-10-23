@@ -304,12 +304,15 @@ extension UserDefaults {
         }
     }
 
-    func cache<T: Encodable>(_ value: T, forKey key: String) {
+    /// Encodes and stores a value. The type is explicit so that a write can't
+    /// silently disagree with the type `cachedValue` reads back.
+    func cache<T: Encodable>(_ value: T, as type: T.Type, forKey key: String) {
         do {
             set(try JSONEncoder().encode(value), forKey: key)
         }
         catch {
-            print("Failed to encode \(T.self) for '\(key)': \(error)")
+            print("Failed to encode \(type) for '\(key)', discarding: \(error)")
+            removeObject(forKey: key)
         }
     }
 
