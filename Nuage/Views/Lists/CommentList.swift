@@ -6,21 +6,20 @@
 //
 
 import SwiftUI
-import Combine
 import SoundCloud
 
 struct CommentList: View {
     
-    var publisher: InfinitePublisher<Comment>
+    var source: InfiniteSource<Comment>
     
     var body: some View {
-        InfiniteList(publisher: publisher) { comment in
+        InfiniteList(source: source) { comment in
             CommentRow(comment: comment)
         }
     }
     
-    init(for publisher: AnyPublisher<Page<Comment>, Error>) {
-        self.publisher = .page(publisher)
+    init(for firstPage: @escaping () async throws -> Page<Comment>) {
+        self.source = .page(firstPage)
     }
     
 }

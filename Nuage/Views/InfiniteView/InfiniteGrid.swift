@@ -10,19 +10,19 @@ import GridStack
 
 struct InfiniteGrid<Element: Decodable&Identifiable&Filterable&Hashable, Item: View>: View {
     
-    private var publisher: InfinitePublisher<Element>
+    private var source: InfiniteSource<Element>
     private var item: ([Element], Int) -> Item
     @State private var filter = ""
     @State private var isSearching = false
     
-    @EnvironmentObject private var commands: CommandSubject
+    @Environment(MenuCommands.self) private var commands
     
     var body: some View {
-        if case let .page(publisher) = publisher {
-            PageView(publisher: publisher, content: grid)
-        }
-        else if case let .array(arrayPublisher, pagePublisher) = publisher {
-            ArrayView(arrayPublisher: arrayPublisher, pagePublisher: pagePublisher, content: grid)
+        switch source {
+        case .page(let firstPage):
+            PageView(firstPage: firstPage, content: grid)
+        case .array(let loadIDs, let loadElements):
+            ArrayView(loadIDs: loadIDs, loadElements: loadElements, content: grid)
         }
     }
     
@@ -50,13 +50,13 @@ struct InfiniteGrid<Element: Decodable&Identifiable&Filterable&Hashable, Item: V
                     }
                 }
             }
-            .onReceive(commands.filter) { withAnimation { isSearching = true } }
+            .onChange(of: commands.filterRequests) { withAnimation { isSearching = true } }
             .onExitCommand(perform: stopFiltering)
         }
     }
     
-    init(publisher: InfinitePublisher<Element>, @ViewBuilder item: @escaping ([Element], Int) -> Item) {
-        self.publisher = publisher
+    init(source: InfiniteSource<Element>, @ViewBuilder item: @escaping ([Element], Int) -> Item) {
+        self.source = source
         self.item = item
     }
     

@@ -8,7 +8,6 @@
 
 import Foundation
 import SwiftUI
-import Combine
 import URLImage
 import SoundCloud
 
@@ -46,14 +45,6 @@ func format(count: Int) -> String {
     }
 
     return (countFormatter.string(from: NSNumber(value: scaled)) ?? String(count)) + suffix
-}
-
-extension AnyCancellable {
-    
-    func store<T: Hashable>(in dictionary: inout Dictionary<T, AnyCancellable>, key: T) {
-        dictionary[key] = self
-    }
-    
 }
 
 protocol Filterable {

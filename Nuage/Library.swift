@@ -6,50 +6,57 @@
 //
 
 import Foundation
-import Combine
+import Observation
 import SoundCloud
 
 private let userKey = "user"
 
 /// Holds the logged in user's playlists, likes and posts and performs the actions modifying them.
-class Library: ObservableObject {
+@MainActor
+@Observable
+final class Library {
 
-    @Published private(set) var playlists = [AnyPlaylist]()
-    @Published private(set) var likes = [Track]()
-    @Published private(set) var posts = [Post]()
+    private(set) var playlists = [AnyPlaylist]()
+    private(set) var likes = [Track]()
+    private(set) var posts = [Post]()
 
-    private var subscriptions = Set<AnyCancellable>()
-    private var playlistsSubscription: AnyCancellable?
-    private var likesSubscription: AnyCancellable?
-    private var postsSubscription: AnyCancellable?
-    private var actionSubscriptions = [UUID: AnyCancellable]()
+    @ObservationIgnored private var userObservation: Task<Void, Never>?
+    @ObservationIgnored private var loadedUserID: String?
+    @ObservationIgnored private var reloadTask: Task<Void, Never>?
+    @ObservationIgnored private var postsTask: Task<Void, Never>?
 
     init() {
-        // Persist the user so that it's available right away on the next launch
-        SoundCloud.shared.$user
-            .dropFirst()
-            .sink { user in
-                let defaults = UserDefaults.standard
-                if let user = user, let data = try? JSONEncoder().encode(user) {
-                    defaults.set(data, forKey: userKey)
-                }
-                else {
-                    defaults.removeObject(forKey: userKey)
-                }
+        userObservation = Task { [weak self] in
+            // Emits the current user first, then every change
+            for await user in Observations({ @MainActor in SoundCloud.shared.user }) {
+                self?.userDidChange(user)
             }
-            .store(in: &subscriptions)
+        }
+    }
 
-        SoundCloud.shared.$user
-            .compactMap { $0 }
-            .removeDuplicates()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] user in
-                guard SoundCloud.shared.accessToken != nil else { return }
-                self?.reloadPlaylists()
-                self?.reloadLikes(of: user)
-                self?.reloadPosts(of: user)
-            }
-            .store(in: &subscriptions)
+    private func userDidChange(_ user: User?) {
+        // Persist the user so that it's available right away on the next launch
+        let defaults = UserDefaults.standard
+        if let user = user, let data = try? JSONEncoder().encode(user) {
+            defaults.set(data, forKey: userKey)
+        }
+        else {
+            defaults.removeObject(forKey: userKey)
+        }
+
+        // Reloading the user from the API emits the same user again
+        guard let user = user,
+              user.id != loadedUserID,
+              SoundCloud.shared.accessToken != nil else { return }
+        loadedUserID = user.id
+
+        reloadTask?.cancel()
+        reloadTask = Task {
+            async let playlists: () = reloadPlaylists()
+            async let likes: () = reloadLikes(of: user)
+            async let posts: () = reloadPosts(of: user)
+            _ = await (playlists, likes, posts)
+        }
     }
 
     static func restoreUser() {
@@ -68,50 +75,45 @@ class Library: ObservableObject {
     static func forgetUser() {
         UserDefaults.standard.removeObject(forKey: userKey)
     }
-    
+
     // MARK: - Loading
 
-    private func reloadPlaylists() {
-        playlistsSubscription = SoundCloud.shared.get(all: .library())
-            .map { $0.map { $0.item } }
-            .receive(on: RunLoop.main)
-            .sink(receiveCompletion: { completion in
-                if case let .failure(error) = completion {
-                    print("Failed to load playlists: \(error)")
-                }
-            }, receiveValue: { [weak self] playlists in
-                self?.playlists = playlists
-            })
+    private func reloadPlaylists() async {
+        do {
+            playlists = try await SoundCloud.shared.get(all: .library()).map { $0.item }
+        }
+        catch {
+            guard !Task.isCancelled else { return }
+            print("Failed to load playlists: \(error)")
+        }
     }
 
-    private func reloadLikes(of user: User) {
-        likesSubscription = SoundCloud.shared.get(all: .trackLikes(of: user))
-            .map { $0.map { $0.item } }
-            .receive(on: RunLoop.main)
-            .sink(receiveCompletion: { completion in
-                if case let .failure(error) = completion {
-                    print("Failed to load likes: \(error)")
-                }
-            }, receiveValue: { [weak self] likes in
-                self?.likes = likes
-            })
+    private func reloadLikes(of user: User) async {
+        do {
+            likes = try await SoundCloud.shared.get(all: .trackLikes(of: user)).map { $0.item }
+        }
+        catch {
+            guard !Task.isCancelled else { return }
+            print("Failed to load likes: \(error)")
+        }
     }
 
-    private func reloadPosts(of user: User) {
-        postsSubscription = SoundCloud.shared.get(all: .stream(of: user))
-            .receive(on: RunLoop.main)
-            .sink(receiveCompletion: { completion in
-                if case let .failure(error) = completion {
-                    print("Failed to load posts: \(error)")
-                }
-            }, receiveValue: { [weak self] posts in
-                self?.posts = posts
-            })
+    private func reloadPosts(of user: User) async {
+        do {
+            posts = try await SoundCloud.shared.get(all: .stream(of: user))
+        }
+        catch {
+            guard !Task.isCancelled else { return }
+            print("Failed to load posts: \(error)")
+        }
     }
 
     private func reloadPosts() {
         guard let user = SoundCloud.shared.user else { return }
-        reloadPosts(of: user)
+
+        // A newer reload makes a still running one obsolete
+        postsTask?.cancel()
+        postsTask = Task { await reloadPosts(of: user) }
     }
 
     // MARK: - State
@@ -175,16 +177,16 @@ class Library: ObservableObject {
     }
 
     private func perform<T>(_ request: APIRequest<T>, description: String, onSuccess: @escaping () -> ()) {
-        let id = UUID()
-        // `receive(on:)` guarantees that the completion is delivered after the subscription is stored
-        actionSubscriptions[id] = SoundCloud.shared.perform(request)
-            .receive(on: RunLoop.main)
-            .sink(receiveCompletion: { [weak self] completion in
-                if case let .failure(error) = completion  {
-                    print("Failed to \(description): \(error)")
-                }
-                self?.actionSubscriptions[id] = nil
-            }, receiveValue: onSuccess)
+        // Not tied to a view, the request should finish even if the view that triggered it disappears
+        Task {
+            do {
+                try await SoundCloud.shared.perform(request)
+                onSuccess()
+            }
+            catch {
+                print("Failed to \(description): \(error)")
+            }
+        }
     }
 
 }

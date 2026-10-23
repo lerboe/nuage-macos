@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import Combine
 import SoundCloud
 
 private let spacing: CGFloat = 3
@@ -17,8 +16,6 @@ struct WaveformView: View {
     
     var url: URL?
     @State private var waveform = emptyWaveform
-    
-    @State private var subscriptions = Set<AnyCancellable>()
     
     var body: some View {
         GeometryReader { geometry in
@@ -39,17 +36,24 @@ struct WaveformView: View {
             .frame(minHeight: 0, maxHeight: .infinity)
             .animation(.spring(), value: waveform)
         }
-        .onAppear {
-            guard let url = url else { return }
-            SoundCloud.shared.get(.waveform(url))
-                .replaceError(with: emptyWaveform)
-                .receive(on: RunLoop.main)
-                .sink { waveform in
-                    withAnimation {
-                        self.waveform = waveform
-                    }
-                }
-                .store(in: &subscriptions)
+        .task(id: url) {
+            guard let url = url else {
+                waveform = emptyWaveform
+                return
+            }
+            
+            let waveform: Waveform
+            do {
+                waveform = try await SoundCloud.shared.get(.waveform(url))
+            }
+            catch {
+                guard !Task.isCancelled else { return }
+                waveform = emptyWaveform
+            }
+            
+            withAnimation {
+                self.waveform = waveform
+            }
         }
     }
     

@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import Combine
 import SoundCloud
 
 private enum SearchSection: String {
@@ -17,14 +16,12 @@ private enum SearchSection: String {
 
 struct SearchList: View {
     
-    var publisher: AnyPublisher<Page<Some>, Error>
+    var query: String
     
     @State private var users = [User]()
     @State private var tracks = [Track]()
     @State private var playlists = [UserPlaylist]()
     @State private var didLoad = false
-    
-    @State private var subscription: AnyCancellable?
     
     var body: some View {
         Group {
@@ -74,23 +71,28 @@ struct SearchList: View {
             }
         }
         .navigationTitle("Search")
-        .onAppear(perform: load)
+        .task { await load() }
     }
     
-    private func load() {
-        guard !didLoad && subscription == nil else { return }
+    private func load() async {
+        guard !didLoad else { return }
         
-        // Subscribe only once, every subscription would trigger another request
-        subscription = publisher
-            .map { $0.collection }
-            .replaceError(with: [])
-            .receive(on: RunLoop.main)
-            .sink { results in
-                users = results.compactMap { if case .user(let user) = $0 { return user } else { return nil } }
-                tracks = results.compactMap { if case .track(let track) = $0 { return track } else { return nil } }
-                playlists = results.compactMap { if case .userPlaylist(let playlist) = $0 { return playlist } else { return nil } }
-                didLoad = true
-            }
+        let results: [Some]
+        do {
+            results = try await SoundCloud.shared.get(.search(query)).collection
+        }
+        catch {
+            // The task is cancelled when the view disappears and restarted when it reappears
+            guard !Task.isCancelled else { return }
+            
+            print("Failed to search for \(query): \(error)")
+            results = []
+        }
+        
+        users = results.compactMap { if case .user(let user) = $0 { return user } else { return nil } }
+        tracks = results.compactMap { if case .track(let track) = $0 { return track } else { return nil } }
+        playlists = results.compactMap { if case .userPlaylist(let playlist) = $0 { return playlist } else { return nil } }
+        didLoad = true
     }
     
     private func header(for section: SearchSection) -> () -> some View {

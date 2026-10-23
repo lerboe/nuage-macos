@@ -7,16 +7,15 @@
 //
 
 import SwiftUI
-import Combine
 import SoundCloud
 
 struct UserGrid<Element: Decodable&Identifiable&Filterable&Hashable>: View {
     
-    var publisher: InfinitePublisher<Element>
+    var source: InfiniteSource<Element>
     private var transform: (Element) -> User
     
     var body: some View {
-        InfiniteGrid(publisher: publisher) { users, idx in
+        InfiniteGrid(source: source) { users, idx in
             let user = transform(users[idx])
             NavigationLink(value: user) {
                 UserItem(user: user)
@@ -29,16 +28,16 @@ struct UserGrid<Element: Decodable&Identifiable&Filterable&Hashable>: View {
 
 extension UserGrid where Element == User {
     
-    init(for publisher: AnyPublisher<Page<User>, Error>) {
-        self.init(publisher: .page(publisher)) { $0 }
+    init(for firstPage: @escaping () async throws -> Page<User>) {
+        self.init(source: .page(firstPage)) { $0 }
     }
     
 }
 
 extension UserGrid where Element == Recommendation {
     
-    init(for publisher: AnyPublisher<Page<Recommendation>, Error>) {
-        self.init(publisher: .page(publisher)) { $0.user }
+    init(for firstPage: @escaping () async throws -> Page<Recommendation>) {
+        self.init(source: .page(firstPage)) { $0.user }
     }
     
 }

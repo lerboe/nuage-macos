@@ -5,23 +5,24 @@
 //  Created by Laurin Brandner on 15.12.20.
 //
 
-import Combine
 import SwiftUI
 
-private let idSubcription = -1
-
 struct ArrayView<ID, Element: Decodable&Identifiable, ContentView: View>: View {
-    
+
     @State private var ids: [ID]?
     @State private var elements = [Element]()
+
+    /// The range of `ids` whose elements are loaded next.
     @State private var elementRange = 0..<16
-    
-    private var arrayPublisher: AnyPublisher<[ID], Error>
-    private var pagePublisher: ([ID]) -> AnyPublisher<[Element], Error>
-    @State private var subscriptions = [Int: AnyCancellable]()
-    
+
+    /// Setting it triggers loading the elements in that range.
+    @State private var requestedRange: Range<Int>?
+
+    private var loadIDs: () async throws -> [ID]
+    private var loadElements: ([ID]) async throws -> [Element]
+
     private var content: ([Element], @escaping () -> ()) -> ContentView
-    
+
     var body: some View {
         Group {
             if ids?.isEmpty ?? false {
@@ -38,44 +39,64 @@ struct ArrayView<ID, Element: Decodable&Identifiable, ContentView: View>: View {
                 content(elements, getNextPage)
             }
         }
-        .onAppear {
+        .task {
             // Don't reload when the view reappears
-            guard ids == nil && subscriptions[idSubcription] == nil else { return }
-            
-            arrayPublisher.receive(on: RunLoop.main)
-                .replaceError(with: [])
-                .sink { elementIDs in
-                    ids = elementIDs
+            guard ids == nil else { return }
+
+            do {
+                ids = try await loadIDs()
+            }
+            catch {
+                // The task is cancelled when the view disappears and restarted when it reappears
+                guard !Task.isCancelled else { return }
+
+                print("Failed to load ids: \(error)")
+                ids = []
+            }
+            getNextPage()
+        }
+        .task(id: requestedRange) {
+            // Skip ranges that are already loaded, e.g. when the view reappears
+            guard let ids = ids,
+                  let range = requestedRange,
+                  range.lowerBound == elementRange.lowerBound else { return }
+
+            do {
+                let page = try await loadElements(Array(ids[range]))
+
+                // A page can contain fewer elements than requested (e.g. deleted tracks),
+                // so `range.lowerBound` isn't necessarily a valid index of `elements`.
+                elements.append(contentsOf: page)
+                elementRange = range.upperBound..<min(ids.count, range.upperBound+min(range.count*2, 50))
+
+                // No row would appear to request more elements
+                if page.isEmpty {
                     getNextPage()
                 }
-                .store(in: &subscriptions, key: idSubcription)
+            }
+            catch {
+                guard !Task.isCancelled else { return }
+                print("Failed to load elements: \(error)")
+            }
         }
     }
-    
-    init(arrayPublisher: AnyPublisher<[ID], Error>,
-         pagePublisher: @escaping ([ID]) -> AnyPublisher<[Element], Error>,
+
+    init(loadIDs: @escaping () async throws -> [ID],
+         loadElements: @escaping ([ID]) async throws -> [Element],
          @ViewBuilder content: @escaping ([Element], @escaping () -> ()) -> ContentView) {
-        self.arrayPublisher = arrayPublisher
-        self.pagePublisher = pagePublisher
+        self.loadIDs = loadIDs
+        self.loadElements = loadElements
         self.content = content
     }
-    
+
+    /// Requests the next range of elements. Calls while that range is loading are ignored.
     private func getNextPage() {
         guard let ids = ids else { return }
+
         let range = elementRange.clamped(to: 0..<ids.count)
-        guard !range.isEmpty, subscriptions[range.lowerBound] == nil else { return }
-        
-        let page = Array(ids[range])
-        
-        pagePublisher(page)
-            .receive(on: RunLoop.main)
-            .sink(receiveCompletion: { _ in }, receiveValue: { page in
-                // A page can contain fewer elements than requested (e.g. deleted tracks),
-                // so `range.startIndex` isn't necessarily a valid index of `elements`.
-                elements.append(contentsOf: page)
-                elementRange = range.endIndex..<min(ids.count, range.endIndex+min(range.count*2, 50))
-            })
-            .store(in: &subscriptions, key: range.lowerBound)
+        guard !range.isEmpty else { return }
+
+        requestedRange = range
     }
-    
+
 }

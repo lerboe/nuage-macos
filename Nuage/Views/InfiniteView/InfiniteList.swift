@@ -6,33 +6,35 @@
 //
 
 import SwiftUI
-import Combine
 import Introspect
 import AppKit
 import SoundCloud
 
-enum InfinitePublisher<Element: Decodable&Identifiable&Filterable&Hashable> {
-    case page(AnyPublisher<Page<Element>, Error>)
-    case array(AnyPublisher<[String], Error>, ([String]) -> AnyPublisher<[Element], Error>)
+/// Where the elements of an infinitely scrolling view come from.
+enum InfiniteSource<Element: Decodable&Identifiable&Filterable&Hashable> {
+    /// Loads the first page, the following ones are loaded through its `next` URL.
+    case page(() async throws -> Page<Element>)
+    /// Loads all ids at once, then the elements in batches of ids.
+    case array(() async throws -> [String], ([String]) async throws -> [Element])
 }
 
 struct InfiniteList<Element: Decodable&Identifiable&Filterable&Hashable, Row: View>: View {
     
-    private var publisher: InfinitePublisher<Element>
+    private var source: InfiniteSource<Element>
     private var row: (Element) -> Row
     
     @State private var filter = ""
     @State private var isSearching = false
     
     @Environment(\.header) private var header: AnyView
-    @EnvironmentObject private var commands: CommandSubject
+    @Environment(MenuCommands.self) private var commands
     
     var body: some View {
-        if case let .page(publisher) = publisher {
-            PageView(publisher: publisher, content: list)
-        }
-        else if case let .array(arrayPublisher, pagePublisher) = publisher {
-            ArrayView(arrayPublisher: arrayPublisher, pagePublisher: pagePublisher, content: list)
+        switch source {
+        case .page(let firstPage):
+            PageView(firstPage: firstPage, content: list)
+        case .array(let loadIDs, let loadElements):
+            ArrayView(loadIDs: loadIDs, loadElements: loadElements, content: list)
         }
     }
     
@@ -78,7 +80,7 @@ struct InfiniteList<Element: Decodable&Identifiable&Filterable&Hashable, Row: Vi
                 .padding(.horizontal)
             }
             .playbackContext(displayedElements)
-            .onReceive(commands.filter) { withAnimation { isSearching = true } }
+            .onChange(of: commands.filterRequests) { withAnimation { isSearching = true } }
             .onExitCommand(perform: stopFiltering)
         }
     }
@@ -90,8 +92,8 @@ struct InfiniteList<Element: Decodable&Identifiable&Filterable&Hashable, Row: Vi
         }
     }
     
-    init(publisher: InfinitePublisher<Element>, @ViewBuilder row: @escaping (Element) -> Row) {
-        self.publisher = publisher
+    init(source: InfiniteSource<Element>, @ViewBuilder row: @escaping (Element) -> Row) {
+        self.source = source
         self.row = row
     }
 

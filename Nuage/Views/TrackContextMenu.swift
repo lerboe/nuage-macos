@@ -7,18 +7,15 @@
 //
 
 import SwiftUI
-import Combine
 import SoundCloud
 
 private struct TrackContextMenu: ViewModifier {
     
-    @ObservedObject private var soundCloud = SoundCloud.shared
+    private var soundCloud: SoundCloud { .shared }
     
     var track: Track
     
-    @State private var subscriptions = Set<AnyCancellable>()
-    
-    @EnvironmentObject private var player: StreamPlayer
+    @Environment(StreamPlayer.self) private var player
     @Environment(\.playlists) private var playlists: [AnyPlaylist]
     @Environment(\.likes) private var likes: [Track]
     @Environment(\.posts) private var posts: [Post]
@@ -58,16 +55,18 @@ private struct TrackContextMenu: ViewModifier {
     }
     
     private func add(trackID: Int, to playlist: UserPlaylist) {
-        soundCloud.get(.userPlaylist(playlist.id))
-            .map { ($0.trackIDs ?? []).compactMap { Int($0) } }
-            .flatMap { soundCloud.get(.set(playlist, trackIDs: $0 + [trackID])) }
-            .receive(on: RunLoop.main)
-            .sink(receiveCompletion: { completion in
-                if case let .failure(error) = completion {
-                    print("Failed to add track to playlist: \(error)")
-                }
-            }, receiveValue: { _ in })
-            .store(in: &subscriptions)
+        // Not tied to the view, the request should finish even if the menu's view disappears
+        Task {
+            do {
+                // Load the playlist first, since the cached one might be outdated
+                let current = try await soundCloud.get(.userPlaylist(playlist.id))
+                let trackIDs = (current.trackIDs ?? []).compactMap { Int($0) }
+                _ = try await soundCloud.get(.set(playlist, trackIDs: trackIDs + [trackID]))
+            }
+            catch {
+                print("Failed to add track to playlist: \(error)")
+            }
+        }
     }
 
 }

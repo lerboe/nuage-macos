@@ -4,14 +4,12 @@
 //
 
 import SwiftUI
-import Combine
 import SoundCloud
 
 struct DiscoverView: View {
 
     @State private var selections = [Selection]()
     @State private var didLoad = false
-    @State private var subscriptions = Set<AnyCancellable>()
 
     var body: some View {
         Group {
@@ -28,20 +26,21 @@ struct DiscoverView: View {
                 }
             }
         }
-        .onAppear(perform: load)
+        .task { await load() }
     }
 
-    private func load() {
+    private func load() async {
         guard !didLoad else { return }
-        SoundCloud.shared.get(.mixedSelections(), limit: 10)
-            .map { $0.collection }
-            .replaceError(with: [])
-            .receive(on: RunLoop.main)
-            .sink { value in
-                selections = value
-                didLoad = true
-            }
-            .store(in: &subscriptions)
+
+        do {
+            selections = try await SoundCloud.shared.get(.mixedSelections(), limit: 10).collection
+        }
+        catch {
+            // The task is cancelled when the view disappears and restarted when it reappears
+            guard !Task.isCancelled else { return }
+            print("Failed to load selections: \(error)")
+        }
+        didLoad = true
     }
 
 }

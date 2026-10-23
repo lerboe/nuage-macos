@@ -7,7 +7,6 @@
 //
 
 import Foundation
-import Combine
 import SoundCloud
 
 struct Preview {
@@ -15,19 +14,9 @@ struct Preview {
     static let user = User(id: "139004098", username: "lerboe", firstName: "la", lastName: "la", avatarURL: URL(string: "https://i1.sndcdn.com/avatars-000322614854-ttkl8d-large.jpg")!)
     
     static let likes: [Like<Track>] = load("Likes.json")
-    static let likePublisher = publisher(of: likes)
     
     static let tracks: [Track] = likes.map { $0.item }
-    static let trackPublisher = publisher(of: tracks)
     
-}
-
-struct PreviewError: Error {}
-
-func publisher<T>(of data: [T]) -> AnyPublisher<T, Error> {
-    return data.publisher
-        .mapError { _ in PreviewError() }
-        .eraseToAnyPublisher()
 }
 
 private func load<T: Decodable>(_ filename: String) -> T {

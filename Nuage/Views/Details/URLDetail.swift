@@ -7,15 +7,12 @@
 
 import SwiftUI
 import SoundCloud
-import Combine
 
 struct URLDetail: View {
     
     var url: URL
     @State private var item: Some?
     @State private var didFail = false
-    
-    @State private var subscription: AnyCancellable?
     
     var body: some View {
         switch item {
@@ -36,17 +33,16 @@ struct URLDetail: View {
     @ViewBuilder private func loadingIndicator() -> some View {
         ProgressView()
             .progressViewStyle(.circular)
-            .onAppear {
-                guard subscription == nil else { return }
-                
-                subscription = SoundCloud.shared.get(.resolve(url))
-                    .receive(on: RunLoop.main)
-                    .sink(receiveCompletion: { completion in
-                        if case let .failure(error) = completion {
-                            print("Failed to resolve \(url): \(error)")
-                            didFail = true
-                        }
-                    }, receiveValue: { item = $0 })
+            .task {
+                do {
+                    item = try await SoundCloud.shared.get(.resolve(url))
+                }
+                catch {
+                    guard !Task.isCancelled else { return }
+                    
+                    print("Failed to resolve \(url): \(error)")
+                    didFail = true
+                }
             }
     }
     

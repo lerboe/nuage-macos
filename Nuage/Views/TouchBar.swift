@@ -10,7 +10,7 @@ import SoundCloud
 
 struct TouchBar: View {
     
-    @EnvironmentObject private var player: StreamPlayer
+    @Environment(StreamPlayer.self) private var player
     
     var body: some View {
         if let track = player.currentStream {
@@ -38,7 +38,7 @@ struct TouchBar: View {
         let duration = TimeInterval(track.duration)
         let font = Font.system(size: 14).monospacedDigit()
         
-        WaveformSlider(url: track.waveformURL, value: $player.progress, in: 0...duration, minValueLabel: { progress in
+        WaveformSlider(url: track.waveformURL, value: Bindable(player).progress, in: 0...duration, minValueLabel: { progress in
             Text(format(time: progress))
                 .font(font)
                 .frame(width: 70, alignment: .trailing)

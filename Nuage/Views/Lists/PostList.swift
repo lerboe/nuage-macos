@@ -6,22 +6,21 @@
 //
 
 import SwiftUI
-import Combine
 import SoundCloud
 
 struct PostList: View {
     
-    private var publisher: InfinitePublisher<Post>
+    private var source: InfiniteSource<Post>
     
     var body: some View {
-        InfiniteList(publisher: publisher) { post in
+        InfiniteList(source: source) { post in
             PostRow(post: post)
                 .playbackStart(at: post)
         }
     }
     
-    init(for publisher: AnyPublisher<Page<Post>, Error>) {
-        self.publisher = .page(publisher)
+    init(for firstPage: @escaping () async throws -> Page<Post>) {
+        self.source = .page(firstPage)
     }
 
 }

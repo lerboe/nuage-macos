@@ -17,7 +17,7 @@ struct PlayerView: View {
     @State private var showingVolumeControls = false
     @State private var showingQueue = false
     
-    @EnvironmentObject private var player: StreamPlayer
+    @Environment(StreamPlayer.self) private var player
     
     var body: some View {
         ZStack {
@@ -87,7 +87,7 @@ struct PlayerView: View {
         let duration = TimeInterval(player.currentStream?.duration ?? 0)
         let font = Font.system(size: 14).monospacedDigit()
         
-        WaveformSlider(url: player.currentStream?.waveformURL, value: $player.progress, in: 0...duration, minValueLabel: { progress in
+        WaveformSlider(url: player.currentStream?.waveformURL, value: Bindable(player).progress, in: 0...duration, minValueLabel: { progress in
             Text(format(time: progress))
                 .font(font)
                 .frame(width: 70, alignment: .trailing)
@@ -150,7 +150,7 @@ struct PlayerView: View {
             .focusable(false)
             .buttonStyle(.borderless)
             
-            PlayerSlider(value: $player.volume, in: 0...1, updateStrategy: .incremental(0.05))
+            PlayerSlider(value: Bindable(player).volume, in: 0...1, updateStrategy: .incremental(0.05))
                 .frame(width: 100)
             
             Button(action: {
@@ -246,7 +246,7 @@ struct PlayerView_Previews: PreviewProvider {
         let player = StreamPlayer()
         player.enqueue(Preview.tracks)
         
-        return PlayerView(onTrackDetailTap: {}).environmentObject(player)
+        return PlayerView(onTrackDetailTap: {}).environment(player)
     }
     
 }

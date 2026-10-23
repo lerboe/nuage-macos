@@ -60,7 +60,7 @@ struct TrackDetail: View {
             
             Divider()
             
-            CommentList(for: SoundCloud.shared.get(.comments(of: track)))
+            CommentList(for: { try await SoundCloud.shared.get(.comments(of: track)) })
                 .header {
                     if let description = track.description {
                         Text(description.withAttributedLinks())
@@ -91,8 +91,8 @@ struct TrackDetail_Previews: PreviewProvider {
         }()
         
         TrackDetail(track: Preview.tracks.first!)
-            .environmentObject(player)
-            .environmentObject(CommandSubject())
+            .environment(player)
+            .environment(MenuCommands())
     }
     
 }

@@ -7,12 +7,11 @@
 //
 
 import SwiftUI
-import Combine
 import SoundCloud
 
 struct MainView: View {
     
-    @ObservedObject private var soundCloud = SoundCloud.shared
+    private var soundCloud: SoundCloud { .shared }
     
     @AppStorage("sidebarSelection") private var sidebarSelection: SidebarItem = .stream
     @State private var navigationPath = NavigationPath()
@@ -21,8 +20,8 @@ struct MainView: View {
     @State private var searchQuery = ""
     @FocusState private var isSearchFocused: Bool
 
-    @EnvironmentObject private var commandSubjects: CommandSubject
-    @EnvironmentObject private var player: StreamPlayer
+    @Environment(MenuCommands.self) private var menuCommands
+    @Environment(StreamPlayer.self) private var player
     @Environment(\.playlists) private var playlists: [AnyPlaylist]
     
     @Environment(\.showLikedPlaylists) private var showLikedPlaylists: Bool
@@ -52,8 +51,7 @@ struct MainView: View {
                             }
                         }
                         .navigationDestination(isPresented: presentSearch) {
-                            let search = soundCloud.get(.search(searchQuery))
-                            SearchList(publisher: search)
+                            SearchList(query: searchQuery)
                                 .id(searchQuery)
                         }
                 }
@@ -72,7 +70,7 @@ struct MainView: View {
         .toolbar(content: toolbar)
         .searchable(text: $searchQuery, placement: .toolbar)
         .searchFocused($isSearchFocused)
-        .onReceive(commandSubjects.search) { isSearchFocused = true }
+        .onChange(of: menuCommands.searchRequests) { isSearchFocused = true }
         .touchBar { TouchBar() }
         .onChange(of: sidebarSelection) {
             navigationPath = NavigationPath()
@@ -133,23 +131,24 @@ struct MainView: View {
             case .discover:
                 DiscoverView()
             case .stream:
-                let stream = SoundCloud.shared.get(.stream(), count: 50)
-                PostList(for: stream)
+                PostList(for: { try await SoundCloud.shared.get(.stream(), count: 50) })
             case .likes:
-                let likes = SoundCloud.shared.$user.compactMap { $0 }
-                    .first()
-                    .flatMap { SoundCloud.shared.get(.trackLikes(of: $0), count: 50) }
-                    .eraseToAnyPublisher()
-                TrackList(for: likes)
+                // The user is loaded after logging in
+                if let user = soundCloud.user {
+                    TrackList(for: { try await SoundCloud.shared.get(.trackLikes(of: user), count: 50) })
+                }
+                else {
+                    loadingIndicator()
+                }
             case .history:
-                let history = SoundCloud.shared.get(.history(), count: 50)
-                TrackList(for: history)
+                TrackList(for: { try await SoundCloud.shared.get(.history(), count: 50) })
             case .following:
-                let following = SoundCloud.shared.$user.compactMap { $0 }
-                    .first()
-                    .flatMap { SoundCloud.shared.get(.followings(of: $0), count: 50) }
-                    .eraseToAnyPublisher()
-                UserGrid(for: following)
+                if let user = soundCloud.user {
+                    UserGrid(for: { try await SoundCloud.shared.get(.followings(of: user), count: 50) })
+                }
+                else {
+                    loadingIndicator()
+                }
             case .userPlaylist(_, let id):
                 TrackList(request: .userPlaylist(id))
             case .systemPlaylist(_, let urn):
@@ -158,6 +157,12 @@ struct MainView: View {
         }
             .navigationTitle(item.title)
             .id(item.id) // Set id so that SwiftUI knows when to render new view
+    }
+    
+    @ViewBuilder private func loadingIndicator() -> some View {
+        ProgressView()
+            .progressViewStyle(.circular)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     @ToolbarContentBuilder private func toolbar() -> some ToolbarContent {
@@ -186,8 +191,8 @@ struct MainView_Previews: PreviewProvider {
         }()
         
         MainView()
-            .environmentObject(player)
-            .environmentObject(CommandSubject())
+            .environment(player)
+            .environment(MenuCommands())
     }
     
 }

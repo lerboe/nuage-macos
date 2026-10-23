@@ -7,16 +7,14 @@
 //
 
 import AppKit
-import SwiftUI
 import AVFoundation
-import Combine
 import MediaPlayer
-import URLImage
+import Observation
 import SoundCloud
 
 protocol Streamable {
 
-    func prepare() -> AnyPublisher<AVURLAsset, Error>
+    func prepare() async throws -> AVURLAsset
 
 }
 
@@ -24,19 +22,20 @@ private let volumeKey = "volume"
 private let shuffleQueueKey = "shuffleQueue"
 private let repeatQueueKey = "repeatQueue"
 
-class StreamPlayer: ObservableObject {
+@MainActor
+@Observable
+final class StreamPlayer {
 
-    private var subscriptions = Set<AnyCancellable>()
-    private var streamSubscription: AnyCancellable?
-    private var didPlayToEndSubscription: AnyCancellable?
-    private var artworkSubscription: AnyCancellable?
-    private var historySubscription: AnyCancellable?
-    private var timeObserver: Any?
+    @ObservationIgnored private var streamTask: Task<Void, Never>?
+    @ObservationIgnored private var didPlayToEndTask: Task<Void, Never>?
+    @ObservationIgnored private var artworkTask: Task<Void, Never>?
+    @ObservationIgnored private var timeObserver: Any?
+    @ObservationIgnored private var timeControlStatusObservation: NSKeyValueObservation?
 
-    private(set) var player: AVPlayer
+    @ObservationIgnored private(set) var player: AVPlayer
 
     /// The tracks in the order they were enqueued.
-    @Published private(set) var queue = [Track]()
+    private(set) var queue = [Track]()
 
     /// Maps positions in the playback order to indices of `queue`.
     private var queueOrder = [Int]()
@@ -53,9 +52,22 @@ class StreamPlayer: ObservableObject {
         return queueOrder.map { queue[$0] }
     }
 
-    @Published private(set) var currentStream: Track?
+    private(set) var currentStream: Track? {
+        didSet {
+            // Add every new track to the SoundCloud history
+            guard let track = currentStream, track != oldValue else { return }
+            Task {
+                do {
+                    try await SoundCloud.shared.perform(.addToHistory(track))
+                }
+                catch {
+                    print("Failed to add track to history: \(error)")
+                }
+            }
+        }
+    }
 
-    @Published var shuffleQueue: Bool {
+    var shuffleQueue: Bool {
         didSet {
             UserDefaults.standard.set(shuffleQueue, forKey: shuffleQueueKey)
             guard shuffleQueue != oldValue else { return }
@@ -69,30 +81,34 @@ class StreamPlayer: ObservableObject {
         }
     }
 
-    @Published var repeatQueue: Bool {
+    var repeatQueue: Bool {
         didSet {
             UserDefaults.standard.set(repeatQueue, forKey: repeatQueueKey)
         }
     }
 
-    @Published var volume: Float = 0.5 {
+    var volume: Float = 0.5 {
         didSet {
-            if volume > 1 { volume = 1 }
-            else if volume < 0 { volume = 0 }
+            let clampedVolume = min(max(volume, 0), 1)
+            if clampedVolume != volume {
+                volume = clampedVolume
+            }
 
             player.volume = volume
             UserDefaults.standard.set(volume, forKey: volumeKey)
         }
     }
 
-    private var shouldSeek = true
-    @Published var progress: TimeInterval = 0.0 {
+    @ObservationIgnored private var shouldSeek = true
+    var progress: TimeInterval = 0.0 {
         didSet {
             guard shouldSeek else { return }
 
             let duration = TimeInterval(currentStream?.duration ?? 0)
-            if progress < 0 { progress = 0 }
-            else if duration > 0 && progress > duration { progress = duration }
+            let clampedProgress = duration > 0 ? min(max(progress, 0), duration) : max(progress, 0)
+            if clampedProgress != progress {
+                progress = clampedProgress
+            }
 
             let time = CMTime(seconds: progress, preferredTimescale: 600)
             player.seek(to: time)
@@ -100,9 +116,9 @@ class StreamPlayer: ObservableObject {
         }
     }
 
-    @Published private(set) var isPlaying = false
+    private(set) var isPlaying = false
 
-    private var nowPlayingTrackID: String?
+    @ObservationIgnored private var nowPlayingTrackID: String?
 
     // MARK: - Initialization
 
@@ -121,37 +137,29 @@ class StreamPlayer: ObservableObject {
 
         let interval = CMTime(value: 1, timescale: 1)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            self?.setProgressWithoutSeeking(time.seconds)
+            MainActor.assumeIsolated {
+                self?.setProgressWithoutSeeking(time.seconds)
+            }
         }
 
-        player.publisher(for: \.timeControlStatus)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] status in
-                self?.isPlaying = (status != .paused)
-                self?.updateNowPlayingInfo()
+        timeControlStatusObservation = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] _, _ in
+            Task { @MainActor in
+                self?.timeControlStatusDidChange()
             }
-            .store(in: &subscriptions)
-
-        // Whenever the current stream changes, add it to the SoundCloud history
-        historySubscription = $currentStream
-            .compactMap { $0 }
-            .removeDuplicates()
-            .flatMap { track in
-                SoundCloud.shared.perform(.addToHistory(track))
-                    .catch { error -> Empty<(), Never> in
-                        print("Failed to add track to history: \(error)")
-                        return Empty()
-                    }
-            }
-            .sink { _ in }
+        }
 
         addRemoteCommandTargets()
     }
 
-    deinit {
+    isolated deinit {
         if let timeObserver = timeObserver {
             player.removeTimeObserver(timeObserver)
         }
+    }
+
+    private func timeControlStatusDidChange() {
+        isPlaying = (player.timeControlStatus != .paused)
+        updateNowPlayingInfo()
     }
 
     // MARK: - Playback
@@ -187,29 +195,36 @@ class StreamPlayer: ObservableObject {
         player.replaceCurrentItem(with: nil)
         setProgressWithoutSeeking(0)
 
-        // Replacing the subscription cancels the loading of a previously requested track,
+        // Cancel the loading of a previously requested track,
         // so that a slow response can't override a newer selection.
-        streamSubscription = newStream.prepare()
-            .receive(on: RunLoop.main)
-            .sink(receiveCompletion: { completion in
-                if case let .failure(error) = completion  {
-                    print("Failed to stream track: \(error)")
-                }
-            }, receiveValue: { [weak self] asset in
-                guard let self = self else { return }
+        streamTask?.cancel()
+        streamTask = Task { [weak self] in
+            do {
+                let asset = try await newStream.prepare()
+                guard let self = self, !Task.isCancelled else { return }
 
                 let item = AVPlayerItem(asset: asset)
-
                 self.player.replaceCurrentItem(with: item)
                 self.player.play()
-
-                self.didPlayToEndSubscription = NotificationCenter.default
-                    .publisher(for: AVPlayerItem.didPlayToEndTimeNotification, object: item)
-                    .receive(on: RunLoop.main)
-                    .sink { [weak self] _ in self?.advanceForward() }
-
+                self.advanceForwardWhenFinished(playing: item)
                 self.updateNowPlayingInfo()
-            })
+            }
+            catch {
+                guard !Task.isCancelled else { return }
+                print("Failed to stream track: \(error)")
+            }
+        }
+    }
+
+    private func advanceForwardWhenFinished(playing item: AVPlayerItem) {
+        didPlayToEndTask?.cancel()
+        didPlayToEndTask = Task { [weak self] in
+            let notifications = NotificationCenter.default.notifications(named: AVPlayerItem.didPlayToEndTimeNotification, object: item)
+            for await _ in notifications {
+                self?.advanceForward()
+                return
+            }
+        }
     }
 
     func pause() {
@@ -267,8 +282,8 @@ class StreamPlayer: ObservableObject {
 
     func reset() {
         pause()
-        streamSubscription = nil
-        didPlayToEndSubscription = nil
+        streamTask?.cancel()
+        didPlayToEndTask?.cancel()
         player.replaceCurrentItem(with: nil)
         currentStreamIndex = nil
         queue = []
@@ -317,35 +332,37 @@ class StreamPlayer: ObservableObject {
     private func addRemoteCommandTargets() {
         let center = MPRemoteCommandCenter.shared()
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.togglePlayback()
+            Task { @MainActor in self?.togglePlayback() }
             return .success
         }
 
         center.playCommand.addTarget { [weak self] _ in
-            self?.resume()
+            Task { @MainActor in self?.resume() }
             return .success
         }
 
         center.pauseCommand.addTarget { [weak self] _ in
-            self?.pause()
+            Task { @MainActor in self?.pause() }
             return .success
         }
 
         center.nextTrackCommand.addTarget { [weak self] _ in
-            self?.advanceForward()
+            Task { @MainActor in self?.advanceForward() }
             return .success
         }
 
         center.previousTrackCommand.addTarget { [weak self] _ in
-            self?.advanceBackward()
+            Task { @MainActor in self?.advanceBackward() }
             return .success
         }
 
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
-            guard let self = self, let event = event as? MPChangePlaybackPositionCommandEvent else {
+            guard let event = event as? MPChangePlaybackPositionCommandEvent else {
                 return .commandFailed
             }
-            self.progress = event.positionTime
+
+            let position = event.positionTime
+            Task { @MainActor in self?.progress = position }
             return .success
         }
     }
@@ -354,7 +371,7 @@ class StreamPlayer: ObservableObject {
         let center = MPNowPlayingInfoCenter.default()
         guard let currentStream = currentStream else {
             nowPlayingTrackID = nil
-            artworkSubscription = nil
+            artworkTask?.cancel()
             center.nowPlayingInfo = nil
             center.playbackState = .stopped
             return
@@ -375,19 +392,7 @@ class StreamPlayer: ObservableObject {
                 MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime
             ]
 
-            let url = currentStream.artworkURL ?? currentStream.user.avatarURL
-            let trackID = currentStream.id
-            artworkSubscription = URLImageService.shared.remoteImagePublisher(url)
-                .receive(on: RunLoop.main)
-                .sink(receiveCompletion: { _ in },
-                      receiveValue: { [weak self] imageInfo in
-                    // The track might have changed while the artwork was loading
-                    guard self?.nowPlayingTrackID == trackID, var info = center.nowPlayingInfo else { return }
-
-                    let image = NSImage(cgImage: imageInfo.cgImage, size: imageInfo.size)
-                    info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-                    center.nowPlayingInfo = info
-                })
+            loadArtwork(for: currentStream)
         }
 
         switch player.timeControlStatus {
@@ -395,6 +400,23 @@ class StreamPlayer: ObservableObject {
         case .playing: center.playbackState = .playing
         case .waitingToPlayAtSpecifiedRate: center.playbackState = .interrupted
         default: center.playbackState = .unknown
+        }
+    }
+
+    private func loadArtwork(for track: Track) {
+        let url = track.artworkURL ?? track.user.avatarURL
+
+        artworkTask?.cancel()
+        artworkTask = Task { [weak self] in
+            guard let (data, _) = try? await URLSession.shared.data(from: url),
+                  let image = NSImage(data: data) else { return }
+
+            // The track might have changed while the artwork was loading
+            let center = MPNowPlayingInfoCenter.default()
+            guard self?.nowPlayingTrackID == track.id, var info = center.nowPlayingInfo else { return }
+
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            center.nowPlayingInfo = info
         }
     }
 

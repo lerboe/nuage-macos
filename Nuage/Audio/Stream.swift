@@ -7,18 +7,18 @@
 //
 
 import AVFoundation
-import Combine
 import SoundCloud
 
 struct NoStreamError: Error {}
 
 extension Track: Streamable {
-    
-    func prepare() -> AnyPublisher<AVURLAsset, Error> {
-        guard let url = streamURL else { return Fail(error: NoStreamError()).eraseToAnyPublisher() }
-        return SoundCloud.shared.get(.audioFile(url))
-            .map { AVURLAsset(url: $0) }
-            .eraseToAnyPublisher()
+
+    @MainActor
+    func prepare() async throws -> AVURLAsset {
+        guard let url = streamURL else { throw NoStreamError() }
+
+        let audioFileURL = try await SoundCloud.shared.get(.audioFile(url))
+        return AVURLAsset(url: audioFileURL)
     }
-    
+
 }

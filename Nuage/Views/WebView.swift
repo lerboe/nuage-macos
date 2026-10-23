@@ -8,7 +8,6 @@
 import SwiftUI
 import AppKit
 import WebKit
-import Combine
 
 typealias CookieHandler = ((HTTPCookie) -> ())
 
@@ -52,17 +51,17 @@ struct WebView: NSViewRepresentable {
     
 }
 
-class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, ObservableObject {
+class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     var handlers = [(String, CookieHandler)]()
     var webView: WKWebView? {
         didSet {
-            webView?.publisher(for: \.url)
-                .sink { [weak self] _ in self?.scanCookiesForAccessToken() }
-                .store(in: &cancellables)
+            urlObservation = webView?.observe(\.url, options: [.initial, .new]) { [weak self] _, _ in
+                Task { @MainActor in self?.scanCookiesForAccessToken() }
+            }
         }
     }
-    private var cancellables = Set<AnyCancellable>()
+    private var urlObservation: NSKeyValueObservation?
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         scanCookiesForAccessToken()

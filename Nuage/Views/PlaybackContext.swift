@@ -8,6 +8,7 @@
 import SwiftUI
 import SoundCloud
 
+@MainActor
 private func createOnPlay<T: SoundCloudIdentifiable>(playbackContext: [AnyHashable],
                                                start: T,
                                                transform: @escaping (T) -> [Track],
@@ -77,7 +78,7 @@ private struct PlaybackStart<T: SoundCloudIdentifiable>: ViewModifier {
     var transform: (T) -> [Track]
     
     @Environment(\.playbackContext) private var playbackContext: [AnyHashable]
-    @EnvironmentObject private var player: StreamPlayer
+    @Environment(StreamPlayer.self) private var player
     
     func body(content: Content) -> some View {
         content
@@ -161,6 +162,7 @@ extension View {
 
 extension NavigationPath {
     
+    @MainActor
     mutating func append<V>(_ value: V,
                             with playbackContext: [AnyHashable],
                             startPlaybackAt start: V,
@@ -174,6 +176,7 @@ extension NavigationPath {
         append(pathValue)
     }
     
+    @MainActor
     mutating func append(_ value: Track,
                          with playbackContext: [AnyHashable],
                          startPlaybackAt start: Track,

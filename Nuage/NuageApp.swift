@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-import Combine
+import Observation
 import SoundCloud
 
 private let accessTokenKey = "accessToken"
@@ -121,19 +121,31 @@ extension EnvironmentValues {
 }
 
 
-class CommandSubject: ObservableObject {
+/// Forwards menu commands to the views handling them.
+/// Views react to changes of the request counters with `onChange(of:)`.
+@MainActor
+@Observable
+final class MenuCommands {
     
-    let filter = PassthroughSubject<(), Never>()
-    let search = PassthroughSubject<(), Never>()
+    private(set) var filterRequests = 0
+    private(set) var searchRequests = 0
+    
+    func requestFilter() {
+        filterRequests += 1
+    }
+    
+    func requestSearch() {
+        searchRequests += 1
+    }
     
 }
 
 @main
 struct NuageApp: App {
     
-    @StateObject private var player = StreamPlayer()
-    @StateObject private var library = Library()
-    @StateObject private var commandSubjects = CommandSubject()
+    @State private var player = StreamPlayer()
+    @State private var library = Library()
+    @State private var menuCommands = MenuCommands()
     
     @State private var showCreatedPlaylists = true
     @State private var showLikedPlaylists = true
@@ -148,8 +160,8 @@ struct NuageApp: App {
                 if loggedIn {
                     MainView()
                         .frame(minWidth: 600, minHeight: 400)
-                        .environmentObject(player)
-                        .environmentObject(commandSubjects)
+                        .environment(player)
+                        .environment(menuCommands)
                         .environment(\.showCreatedPlaylists, showCreatedPlaylists)
                         .environment(\.showLikedPlaylists, showLikedPlaylists)
                         .environment(\.playlists, library.playlists)
@@ -181,12 +193,10 @@ struct NuageApp: App {
     
     @CommandsBuilder private func commands() -> some Commands {
         CommandGroup(after: .textEditing) {
-            Button("Filter") {
-                commandSubjects.filter.send()
-            }.keyboardShortcut("f", modifiers: .command)
-            Button("Search") {
-                commandSubjects.search.send()
-            }.keyboardShortcut("l", modifiers: .command)
+            Button("Filter", action: menuCommands.requestFilter)
+                .keyboardShortcut("f", modifiers: .command)
+            Button("Search", action: menuCommands.requestSearch)
+                .keyboardShortcut("l", modifiers: .command)
         }
         CommandGroup(before: .toolbar) {
             Menu("Playlists") {

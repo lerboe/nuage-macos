@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import Combine
 import SoundCloud
 
 struct UserDetail: View {
@@ -14,7 +13,6 @@ struct UserDetail: View {
     var user: User
     @State private var loadedUser: User?
     @State private var selection: Tab = .stream
-    @State private var subscription: AnyCancellable?
     
     var body: some View {
         let currentUser = loadedUser ?? user
@@ -64,13 +62,16 @@ struct UserDetail: View {
             }
         }
         .navigationTitle(user.username)
-        .onAppear {
-            guard loadedUser == nil && subscription == nil else { return }
+        .task {
+            guard loadedUser == nil else { return }
             
-            subscription = SoundCloud.shared.get(.user(with: user.id))
-                .replaceError(with: user)
-                .receive(on: RunLoop.main)
-                .sink { loadedUser = $0 }
+            do {
+                loadedUser = try await SoundCloud.shared.get(.user(with: user.id))
+            }
+            catch {
+                guard !Task.isCancelled else { return }
+                print("Failed to load user: \(error)")
+            }
         }
     }
     
@@ -86,10 +87,10 @@ struct UserDetail: View {
     
     @ViewBuilder private func stream(for selection: Tab) -> some View {
         switch selection {
-        case .stream: PostList(for: SoundCloud.shared.get(.stream(of: user)))
-        case .likes: TrackList(for: SoundCloud.shared.get(.trackLikes(of: user)))
-        case .following: UserGrid(for: SoundCloud.shared.get(.followings(of: user)))
-        case .followers: UserGrid(for: SoundCloud.shared.get(.followers(of: user)))
+        case .stream: PostList(for: { try await SoundCloud.shared.get(.stream(of: user)) })
+        case .likes: TrackList(for: { try await SoundCloud.shared.get(.trackLikes(of: user)) })
+        case .following: UserGrid(for: { try await SoundCloud.shared.get(.followings(of: user)) })
+        case .followers: UserGrid(for: { try await SoundCloud.shared.get(.followers(of: user)) })
         }
     }
     
@@ -110,8 +111,8 @@ struct UserDetail_Previews: PreviewProvider {
     
     static var previews: some View {
         UserDetail(user: Preview.tracks.first!.user)
-            .environmentObject(StreamPlayer())
-            .environmentObject(CommandSubject())
+            .environment(StreamPlayer())
+            .environment(MenuCommands())
     }
     
 }
