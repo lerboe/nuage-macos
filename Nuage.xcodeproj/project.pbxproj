@@ -21,6 +21,7 @@
 		4969F3CD257CFA800048E29B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4969F3CC257CFA800048E29B /* Assets.xcassets */; };
 		4969F3D0257CFA800048E29B /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4969F3CF257CFA800048E29B /* Preview Assets.xcassets */; };
 		4969F41E257CFB100048E29B /* Preview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4969F400257CFB100048E29B /* Preview.swift */; };
+		49AA00022AAA00022AAA0002 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49AA00012AAA00012AAA0001 /* Keychain.swift */; };
 		4969F428257CFB100048E29B /* Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4969F40B257CFB100048E29B /* Helpers.swift */; };
 		4969F42A257CFB100048E29B /* Stream.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4969F40E257CFB100048E29B /* Stream.swift */; };
 		4969F42B257CFB100048E29B /* StreamPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4969F40F257CFB100048E29B /* StreamPlayer.swift */; };
@@ -70,6 +71,7 @@
 		4969F3D1257CFA800048E29B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		4969F3D2257CFA800048E29B /* Nuage.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Nuage.entitlements; sourceTree = "<group>"; };
 		4969F400257CFB100048E29B /* Preview.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Preview.swift; sourceTree = "<group>"; };
+		49AA00012AAA00012AAA0001 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
 		4969F40B257CFB100048E29B /* Helpers.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Helpers.swift; sourceTree = "<group>"; };
 		4969F40E257CFB100048E29B /* Stream.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Stream.swift; sourceTree = "<group>"; };
 		4969F40F257CFB100048E29B /* StreamPlayer.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = StreamPlayer.swift; sourceTree = "<group>"; };
@@ -180,6 +182,7 @@
 				4969F410257CFB100048E29B /* Views */,
 				4969F40D257CFB100048E29B /* Audio */,
 				4969F40B257CFB100048E29B /* Helpers.swift */,
+				49AA00012AAA00012AAA0001 /* Keychain.swift */,
 				4969F400257CFB100048E29B /* Preview.swift */,
 				4969F3CC257CFA800048E29B /* Assets.xcassets */,
 				4969F3D1257CFA800048E29B /* Info.plist */,
@@ -356,6 +359,7 @@
 				4998E12125CADC8300EB986F /* Artwork.swift in Sources */,
 				D15C0BE100000001000000DC /* DiscoverView.swift in Sources */,
 				4969F428257CFB100048E29B /* Helpers.swift in Sources */,
+				49AA00022AAA00022AAA0002 /* Keychain.swift in Sources */,
 				49FA14C62589693E00CEF925 /* InfiniteList.swift in Sources */,
 				490857292A718FFF002D4FD0 /* PostRow.swift in Sources */,
 				4969F42E257CFB100048E29B /* LoginView.swift in Sources */,
