@@ -22,16 +22,10 @@ struct WaveformView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            let numberOfBars = CGFloat(geometry.size.width+spacing)/CGFloat(spacing+barWidth)
-            let samplesPerBar = floor(CGFloat(waveform.samples.count)/numberOfBars)
-            let bars = Array(0..<Int(numberOfBars))
-                .map { bar -> CGFloat in
-                    let idx = CGFloat(bar)*samplesPerBar
-                    let sample = interpolate(from: idx, to: idx+samplesPerBar)/CGFloat(waveform.maxHeight)
-                    return CGFloat(pow(sample, 3))
-                }
-            let shouldScale = (self.waveform != emptyWaveform)
-            let maxBar = bars.max() ?? 1.0
+            let numberOfBars = max(Int((geometry.size.width+spacing)/(spacing+barWidth)), 0)
+            let bars = self.bars(count: numberOfBars)
+            let maxBar = bars.max() ?? 0
+            let shouldScale = (self.waveform != emptyWaveform) && maxBar > 0
             
             HStack(alignment: .center, spacing: spacing) {
                 ForEach(Array(bars.enumerated()), id: \.offset) { _, bar in
@@ -59,13 +53,22 @@ struct WaveformView: View {
         }
     }
     
-    private func interpolate(from: CGFloat, to: CGFloat) -> CGFloat {
-        let lhs = max(Int(round(from)), 0)
-        let rhs = min(Int(round(to)), waveform.samples.count-1)
-        let sum = waveform.samples[lhs...rhs].reduce(0, +)
-        let cnt = rhs-lhs+1
-
-        return CGFloat(sum)/CGFloat(cnt)
+    /// Averages the samples into `count` bars, each normalized to 0...1.
+    private func bars(count: Int) -> [CGFloat] {
+        let samples = waveform.samples
+        let maxHeight = CGFloat(waveform.maxHeight)
+        guard count > 0, !samples.isEmpty, maxHeight > 0 else {
+            return Array(repeating: 0, count: count)
+        }
+        
+        let samplesPerBar = CGFloat(samples.count)/CGFloat(count)
+        return (0..<count).map { bar in
+            let lhs = Int(CGFloat(bar)*samplesPerBar)
+            let rhs = max(lhs, min(Int(CGFloat(bar+1)*samplesPerBar)-1, samples.count-1))
+            let mean = CGFloat(samples[lhs...rhs].reduce(0, +))/CGFloat(rhs-lhs+1)
+            
+            return pow(mean/maxHeight, 3)
+        }
     }
     
 }

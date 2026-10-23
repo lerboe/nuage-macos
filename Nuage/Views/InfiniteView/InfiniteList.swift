@@ -42,9 +42,9 @@ struct InfiniteList<Element: Decodable&Identifiable&Filterable&Hashable, Row: Vi
         VStack {
             if isSearching {
                 TextField("Filter", text: $filter)
-                    .onChange(of: filter, perform: { _ in
+                    .onChange(of: filter) {
                         getNextPage()
-                    })
+                    }
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding()
                     .introspectTextField { $0.becomeFirstResponder() }
@@ -63,7 +63,8 @@ struct InfiniteList<Element: Decodable&Identifiable&Filterable&Hashable, Row: Vi
                             row(displayedElements[idx-1])
                                 .id(idx)
                                 .onAppear {
-                                    if idx == elements.count/2 {
+                                    // Repeated calls are ignored while a page is loading
+                                    if idx >= displayedElements.count/2 {
                                         getNextPage()
                                     }
                                 }

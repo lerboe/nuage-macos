@@ -10,8 +10,7 @@ import Combine
 import SwiftUI
 import SoundCloud
 
-private let subjectSubcription = -1
-private let initialPageSubscription = 0
+private let initialPageSubscription = -1
 
 struct PageView<Element: Decodable&Identifiable, ContentView: View>: View {
     
@@ -28,8 +27,8 @@ struct PageView<Element: Decodable&Identifiable, ContentView: View>: View {
     
     var body: some View {
         Group {
-            if let pages = pages {
-                if pages.isEmpty {
+            if pages != nil {
+                if elements.isEmpty {
                     Text("Empty")
                         .font(.title2)
                         .foregroundColor(.secondary)
@@ -45,6 +44,9 @@ struct PageView<Element: Decodable&Identifiable, ContentView: View>: View {
             }
         }
         .onAppear {
+            // Don't reload (and thereby lose all loaded pages) when the view reappears
+            guard pages == nil && subscriptions[initialPageSubscription] == nil else { return }
+            
             publisher.receive(on: RunLoop.main)
                 .sink(receiveCompletion: { completion in
                     if case .failure(_) = completion {
@@ -64,15 +66,18 @@ struct PageView<Element: Decodable&Identifiable, ContentView: View>: View {
     }
     
     private func getNextPage() {
-        guard subscriptions[elements.count] == nil,
-              let lastPage = pages?.last else { return }
+        // Key the request by the number of loaded pages, so that a page with no elements doesn't block the following ones
+        guard let pages = pages,
+              let lastPage = pages.last,
+              lastPage.next != nil,
+              subscriptions[pages.count] == nil else { return }
 
         SoundCloud.shared.get(next: lastPage)
             .receive(on: RunLoop.main)
             .sink(receiveCompletion: { _ in }, receiveValue: { page in
-                pages?.append(page)
+                self.pages?.append(page)
             })
-            .store(in: &subscriptions, key: elements.count)
+            .store(in: &subscriptions, key: pages.count)
     }
     
 }

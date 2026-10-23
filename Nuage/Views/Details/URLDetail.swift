@@ -13,11 +13,16 @@ struct URLDetail: View {
     
     var url: URL
     @State private var item: Some?
+    @State private var didFail = false
     
-    @State private var subscriptions = Set<AnyCancellable>()
+    @State private var subscription: AnyCancellable?
     
     var body: some View {
         switch item {
+        case nil where didFail:
+            Text("Could not open \(url.absoluteString)")
+                .font(.title2)
+                .foregroundColor(.secondary)
         case nil: loadingIndicator()
         case .track(let track): TrackDetail(track: track)
                 .playbackContext([track])
@@ -32,12 +37,16 @@ struct URLDetail: View {
         ProgressView()
             .progressViewStyle(.circular)
             .onAppear {
-                SoundCloud.shared.get(.resolve(url))
-                    .map { Optional($0) }
-                    .replaceError(with: nil)
+                guard subscription == nil else { return }
+                
+                subscription = SoundCloud.shared.get(.resolve(url))
                     .receive(on: RunLoop.main)
-                    .assign(to: \.item, on: self)
-                    .store(in: &subscriptions)
+                    .sink(receiveCompletion: { completion in
+                        if case let .failure(error) = completion {
+                            print("Failed to resolve \(url): \(error)")
+                            didFail = true
+                        }
+                    }, receiveValue: { item = $0 })
             }
     }
     

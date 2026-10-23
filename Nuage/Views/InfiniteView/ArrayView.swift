@@ -12,7 +12,7 @@ private let idSubcription = -1
 
 struct ArrayView<ID, Element: Decodable&Identifiable, ContentView: View>: View {
     
-    @State private var ids = [ID]()
+    @State private var ids: [ID]?
     @State private var elements = [Element]()
     @State private var elementRange = 0..<16
     
@@ -24,7 +24,12 @@ struct ArrayView<ID, Element: Decodable&Identifiable, ContentView: View>: View {
     
     var body: some View {
         Group {
-            if elements.isEmpty {
+            if ids?.isEmpty ?? false {
+                Text("Empty")
+                    .font(.title2)
+                    .foregroundColor(.secondary)
+            }
+            else if elements.isEmpty {
                 ProgressView()
                     .progressViewStyle(.circular)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -34,6 +39,9 @@ struct ArrayView<ID, Element: Decodable&Identifiable, ContentView: View>: View {
             }
         }
         .onAppear {
+            // Don't reload when the view reappears
+            guard ids == nil && subscriptions[idSubcription] == nil else { return }
+            
             arrayPublisher.receive(on: RunLoop.main)
                 .replaceError(with: [])
                 .sink { elementIDs in
@@ -41,8 +49,6 @@ struct ArrayView<ID, Element: Decodable&Identifiable, ContentView: View>: View {
                     getNextPage()
                 }
                 .store(in: &subscriptions, key: idSubcription)
-            
-            getNextPage()
         }
     }
     
@@ -55,19 +61,21 @@ struct ArrayView<ID, Element: Decodable&Identifiable, ContentView: View>: View {
     }
     
     private func getNextPage() {
+        guard let ids = ids else { return }
         let range = elementRange.clamped(to: 0..<ids.count)
-        guard !ids.isEmpty && range.count > 0 else { return }
-        guard subscriptions[elements.count] == nil else { return }
+        guard !range.isEmpty, subscriptions[range.lowerBound] == nil else { return }
         
         let page = Array(ids[range])
         
         pagePublisher(page)
             .receive(on: RunLoop.main)
             .sink(receiveCompletion: { _ in }, receiveValue: { page in
-                elements.insert(contentsOf: page, at: range.startIndex)
+                // A page can contain fewer elements than requested (e.g. deleted tracks),
+                // so `range.startIndex` isn't necessarily a valid index of `elements`.
+                elements.append(contentsOf: page)
                 elementRange = range.endIndex..<min(ids.count, range.endIndex+min(range.count*2, 50))
             })
-            .store(in: &subscriptions, key: elements.count)
+            .store(in: &subscriptions, key: range.lowerBound)
     }
     
 }

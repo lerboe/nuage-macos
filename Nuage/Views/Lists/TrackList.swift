@@ -15,8 +15,6 @@ struct TrackList<Element: Decodable&SoundCloudIdentifiable&Filterable&Hashable>:
     private var publisher: InfinitePublisher<Element>
     private var transform: (Element) -> Track
     
-    @EnvironmentObject private var player: StreamPlayer
-    
     var body: some View {
         InfiniteList(publisher: publisher) { elem in
             let track = transform(elem)

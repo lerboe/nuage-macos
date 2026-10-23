@@ -11,10 +11,9 @@ import SoundCloud
 
 private let accessTokenKey = "accessToken"
 private let accessTokenExpiryDateKey = "accessTokenExpiryDate"
-private let userKey = "user"
-private let playlistsKey = "playlists"
-private let likesKey = "likes"
-private let postsKey = "posts"
+
+/// Keys of a library cache that was never read back successfully, see `NuageApp.init`.
+private let legacyCacheKeys = ["playlists", "likes", "posts"]
 
 private struct ShowCreatedPlaylistsKey: EnvironmentKey {
     
@@ -124,8 +123,8 @@ extension EnvironmentValues {
 
 class CommandSubject: ObservableObject {
     
-    var filter = PassthroughSubject<(), Never>()
-    var search = PassthroughSubject<(), Never>()
+    let filter = PassthroughSubject<(), Never>()
+    let search = PassthroughSubject<(), Never>()
     
 }
 
@@ -133,16 +132,13 @@ class CommandSubject: ObservableObject {
 struct NuageApp: App {
     
     @StateObject private var player = StreamPlayer()
-    private var commandSubjects = CommandSubject()
+    @StateObject private var library = Library()
+    @StateObject private var commandSubjects = CommandSubject()
     
     @State private var showCreatedPlaylists = true
     @State private var showLikedPlaylists = true
     
-    @State private var playlists: [AnyPlaylist]
-    @State private var likes: [Track]
-    @State private var posts: [Post]
     @State private var loggedIn: Bool
-    @State private var subscriptions = Set<AnyCancellable>()
     
     var body: some Scene {
         WindowGroup {
@@ -156,35 +152,19 @@ struct NuageApp: App {
                         .environmentObject(commandSubjects)
                         .environment(\.showCreatedPlaylists, showCreatedPlaylists)
                         .environment(\.showLikedPlaylists, showLikedPlaylists)
-                        .environment(\.playlists, playlists)
-                        .environment(\.likes, likes)
-                        .environment(\.posts, posts)
-                        .environment(\.toggleLikeTrack, toggleLike)
-                        .environment(\.toggleRepostTrack, toggleRepost)
-                        .environment(\.toggleLikePlaylist, toggleLike)
-                        .environment(\.toggleRepostPlaylist, toggleRepost)
-                        .onChange(of: playlists) { UserDefaults.standard.cache($0, as: [AnyPlaylist].self, forKey: playlistsKey) }
-                        .onChange(of: likes) { UserDefaults.standard.cache($0, as: [Track].self, forKey: likesKey) }
-                        .onChange(of: posts) { UserDefaults.standard.cache($0, as: [Post].self, forKey: postsKey) }
-                        .onAppear {
-                            reloadLibrary()
-                            reloadLikes()
-                            reloadPosts()
-                            
-                            // Whenever the current stream changes, add it to the SoundCloud history
-                            player.$currentStream
-                                .filter { $0 != nil}
-                                .flatMap { SoundCloud.shared.perform(.addToHistory($0!)) }
-                                .sink(receiveCompletion: { completion in
-                                    if case let .failure(error) = completion {
-                                        print("Failed to add track to history: \(error)")
-                                    }
-                                }, receiveValue: { _ in })
-                                .store(in: &subscriptions)
-                        }
+                        .environment(\.playlists, library.playlists)
+                        .environment(\.likes, library.likes)
+                        .environment(\.posts, library.posts)
+                        .environment(\.toggleLikeTrack) { track in { library.toggleLike(track) } }
+                        .environment(\.toggleRepostTrack) { track in { library.toggleRepost(track) } }
+                        .environment(\.toggleLikePlaylist) { playlist in { library.toggleLike(playlist) } }
+                        .environment(\.toggleRepostPlaylist) { playlist in { library.toggleRepost(playlist) } }
                 }
                 else {
                     LoginView { accessToken, expiryDate in
+                        // The cookie handler fires on every navigation, only log in once
+                        guard !loggedIn else { return }
+                        
                         let defaults = UserDefaults.standard
                         Keychain.set(accessToken, forKey: accessTokenKey)
                         defaults.set(expiryDate, forKey: accessTokenExpiryDateKey)
@@ -265,11 +245,12 @@ struct NuageApp: App {
     init() {
         let MB = 1024*1024
         URLCache.shared = URLCache(memoryCapacity: 10*MB, diskCapacity: 20*MB)
-        URLSession.shared.configuration.requestCachePolicy = .returnCacheDataElseLoad
         
         let defaults = UserDefaults.standard
-        SoundCloud.shared.user = defaults.cachedValue(User.self, forKey: userKey)
-
+        
+        // Previous versions wrote a library cache that could never be decoded again
+        legacyCacheKeys.forEach(defaults.removeObject)
+        
         // Migrate a token still stored in plaintext by an earlier version,
         // unless the Keychain already holds one. Never leave the plaintext copy behind.
         if let legacyToken = defaults.string(forKey: accessTokenKey) {
@@ -278,151 +259,22 @@ struct NuageApp: App {
             }
             defaults.removeObject(forKey: accessTokenKey)
         }
-
-        let token = Keychain.string(forKey: accessTokenKey)
-        let expiryDate = defaults.object(forKey: accessTokenExpiryDateKey) as? Date
-
-        _loggedIn = State(initialValue: false)
-        if let token = token {
-            if let expiryDate = expiryDate, expiryDate >= Date() {
+        
+        var loggedIn = false
+        if let token = Keychain.string(forKey: accessTokenKey) {
+            if let expiryDate = defaults.object(forKey: accessTokenExpiryDateKey) as? Date, expiryDate >= Date() {
+                Library.restoreUser()
                 SoundCloud.shared.accessToken = token
-                _loggedIn = State(initialValue: true)
+                loggedIn = true
             }
             else {
                 // Expired, or no expiry date to check against
                 Keychain.set(nil, forKey: accessTokenKey)
                 defaults.removeObject(forKey: accessTokenExpiryDateKey)
+                Library.forgetUser()
             }
         }
-        
-        // A cache that fails to decode is only a cache miss, the content is
-        // refetched on appear. Never let it take the app down on launch.
-        playlists = defaults.cachedValue([AnyPlaylist].self, forKey: playlistsKey) ?? []
-        likes = defaults.cachedValue([Track].self, forKey: likesKey) ?? []
-        posts = defaults.cachedValue([Post].self, forKey: postsKey) ?? []
-        
-        SoundCloud.shared.$user.sink { user in
-            if let user = user {
-                defaults.cache(user, as: User.self, forKey: userKey)
-            }
-            else {
-                defaults.removeObject(forKey: userKey)
-            }
-        }
-        .store(in: &subscriptions)
-    }
-    
-    private func reloadLibrary() {
-        SoundCloud.shared.get(all: .library())
-            .map { $0.map { $0.item } }
-            .replaceError(with: playlists)
-            .receive(on: RunLoop.main)
-            .assign(to: \.playlists, on: self)
-            .store(in: &subscriptions)
-    }
-    
-    private func reloadLikes() {
-        SoundCloud.shared.$user
-            .filter { $0 != nil}
-            .flatMap { SoundCloud.shared.get(all: .trackLikes(of: $0!)) }
-            .map { $0.map { $0.item } }
-            .replaceError(with: likes)
-            .receive(on: RunLoop.main)
-            .assign(to: \.likes, on: self)
-            .store(in: &subscriptions)
-    }
-    
-    private func reloadPosts() {
-        SoundCloud.shared.$user
-            .filter { $0 != nil}
-            .flatMap { SoundCloud.shared.get(all: .stream(of: $0!)) }
-            .replaceError(with: posts)
-            .receive(on: RunLoop.main)
-            .assign(to: \.posts, on: self)
-            .store(in: &subscriptions)
-    }
-    
-    private func toggleLike(_ track: Track) -> () -> () {
-        return {
-            let shouldUnlike = likes.contains(track)
-            let request: APIRequest = shouldUnlike ? .unlike(track) : .like(track)
-            
-            return SoundCloud.shared.perform(request)
-                .receive(on: RunLoop.main)
-                .sink(receiveCompletion: { completion in
-                    if case let .failure(error) = completion  {
-                        print("Failed to like track: \(error)")
-                    }
-                }, receiveValue: {
-                    if shouldUnlike {
-                        likes.removeAll { $0 == track }
-                    }
-                    else {
-                        likes.append(track)
-                    }
-                })
-                .store(in: &subscriptions)
-        }
-    }
-    
-    private func toggleLike(_ playlist: AnyPlaylist) -> () -> () {
-        return {
-            let shouldUnlike = playlists.contains(playlist)
-            let request: APIRequest = shouldUnlike ? .unlike(playlist) : .like(playlist)
-            
-            return SoundCloud.shared.perform(request)
-                .receive(on: RunLoop.main)
-                .sink(receiveCompletion: { completion in
-                    if case let .failure(error) = completion  {
-                        print("Failed to like playlist: \(error)")
-                    }
-                }, receiveValue: {
-                    if shouldUnlike {
-                        playlists.removeAll { $0 == playlist }
-                    }
-                    else {
-                        playlists.append(playlist)
-                    }
-                })
-                .store(in: &subscriptions)
-        }
-    }
-    
-    private func toggleRepost(_ track: Track) -> () -> () {
-        return {
-            let shouldDeleteRepost = posts.filter { $0.isRepost && $0.isTrack }
-                .map { $0.tracks.first! }
-                .contains(track)
-            let request: APIRequest = shouldDeleteRepost ? .unrepost(track) : .repost(track)
-            
-            return SoundCloud.shared.perform(request)
-                .receive(on: RunLoop.main)
-                .sink(receiveCompletion: { completion in
-                    if case let .failure(error) = completion  {
-                        print("Failed to repost track: \(error)")
-                    }
-                }, receiveValue: { reloadPosts() })
-                .store(in: &subscriptions)
-        }
-    }
-    
-    private func toggleRepost(_ playlist: UserPlaylist) -> () -> () {
-        return {
-            let shouldDeleteRepost = posts.filter { $0.isRepost && !$0.isTrack }
-                .compactMap { $0.playlist }
-                .contains(playlist)
-            
-            let request: APIRequest = shouldDeleteRepost ? .unrepost(playlist) : .repost(playlist)
-            
-            return SoundCloud.shared.perform(request)
-                .receive(on: RunLoop.main)
-                .sink(receiveCompletion: { completion in
-                    if case let .failure(error) = completion  {
-                        print("Failed to repost playlist: \(error)")
-                    }
-                }, receiveValue: { reloadPosts() })
-                .store(in: &subscriptions)
-        }
+        _loggedIn = State(initialValue: loggedIn)
     }
     
 }

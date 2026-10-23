@@ -45,12 +45,13 @@ struct PlayerSlider<Value : BinaryFloatingPoint, MinValueLabel: View, MaxValueLa
         GeometryReader { geometry in
             let currentValue = updatingValue ?? value
             let rangeWidth = range.upperBound - range.lowerBound
-            let relativeValue = rangeWidth > 0 ? CGFloat(currentValue/rangeWidth) : CGFloat(0)
+            let relativeValue = rangeWidth > 0 ? CGFloat((currentValue - range.lowerBound)/rangeWidth) : CGFloat(0)
             let barValue = geometry.size.width * relativeValue
             let knobValue = (geometry.size.width - knobRadius) * relativeValue
             let currentKnobColor = highlighted ? highlightedKnobColor : knobColor
             
             let drag = DragGesture(minimumDistance: 0, coordinateSpace: .local).onChanged { gesture in
+                guard geometry.size.width > 0 else { return }
                 var newValue = Value(gesture.location.x/geometry.size.width) * rangeWidth + range.lowerBound
                 newValue = min(max(newValue, range.lowerBound), range.upperBound)
                 
@@ -64,7 +65,10 @@ struct PlayerSlider<Value : BinaryFloatingPoint, MinValueLabel: View, MaxValueLa
                     }
                 }
             }.onEnded { gesture in
-                value = updatingValue ?? value
+                // With the incremental strategy, `value` already holds the rounded value
+                if case .onCommit = updateStrategy, let updatingValue = updatingValue {
+                    value = updatingValue
+                }
                 updatingValue = nil
             }
             .updating($highlighted) { _, highlighted, _ in
@@ -78,7 +82,7 @@ struct PlayerSlider<Value : BinaryFloatingPoint, MinValueLabel: View, MaxValueLa
                         .frame(width: barValue)
                     Rectangle()
                         .foregroundColor(barBackgroundColor)
-                        .frame(width: geometry.size.width-barValue)
+                        .frame(width: max(0, geometry.size.width-barValue))
                 }
                 .cornerRadius(1.5)
                 .frame(height: 3)

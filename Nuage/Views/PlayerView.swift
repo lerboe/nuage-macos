@@ -8,10 +8,7 @@
 
 import SwiftUI
 import AVKit
-import Combine
 import SoundCloud
-
-struct NoTrackError: Error {}
 
 struct PlayerView: View {
     
@@ -19,10 +16,8 @@ struct PlayerView: View {
     
     @State private var showingVolumeControls = false
     @State private var showingQueue = false
-    @State private var subscriptions = Set<AnyCancellable>()
     
     @EnvironmentObject private var player: StreamPlayer
-    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         ZStack {
@@ -64,9 +59,7 @@ struct PlayerView: View {
     
     @ViewBuilder private func artwork() -> some View {
         if let track = player.currentStream {
-            let url = track.artworkURL ?? player.currentStream?.user.avatarURL
-            RemoteImage(url: url, cornerRadius: 3)
-                .onTapGesture(perform: onTrackDetailTap)
+            RemoteImage(url: track.artworkURL ?? track.user.avatarURL, cornerRadius: 3)
         }
         else {
             RemoteImage(url: nil, cornerRadius: 3)
@@ -171,41 +164,42 @@ struct PlayerView: View {
     }
     
     @ViewBuilder private func queue() -> some View {
-        let currentStreamIndex = player.currentStreamIndex ?? 0
+        // Indices refer to the playback order, which differs from `player.queue` when shuffling
+        let queue = Array(player.orderedQueue.enumerated())
+        let currentStreamIndex = min(player.currentStreamIndex ?? 0, queue.count)
         
         ScrollViewReader { proxy in
             List {
                 if currentStreamIndex > 0 {
-                    let prefix = player.queue.prefix(upTo: currentStreamIndex)
                     Section(header: Text("Previous")) {
-                        queueRows(for: prefix)
+                        queueRows(for: queue[..<currentStreamIndex])
                     }
                 }
                 
-                Section(header: Text("Now Playing")) {
-                    queueRows(for: [player.queue[currentStreamIndex]])
+                if currentStreamIndex < queue.count {
+                    Section(header: Text("Now Playing")) {
+                        queueRows(for: queue[currentStreamIndex...currentStreamIndex])
+                    }
                 }
                 
-                if currentStreamIndex < player.queue.count - 1 {
-                    let suffix = player.queue.suffix(from: currentStreamIndex+1)
+                if currentStreamIndex + 1 < queue.count {
                     Section(header: Text("Up Next")) {
-                        queueRows(for: suffix)
+                        queueRows(for: queue[(currentStreamIndex+1)...])
                     }
                 }
             }
             .onAppear {
-                if let id = player.currentStream?.id {
-                    proxy.scrollTo(id, anchor: .top)
-                }
+                proxy.scrollTo(currentStreamIndex, anchor: .top)
             }
         }
     }
     
-    @ViewBuilder private func queueRows<T: RandomAccessCollection>(for tracks: T) -> some View where T.Element == Track {
-        ForEach(Array(tracks.enumerated()), id: \.element.id) { idx, track in
+    @ViewBuilder private func queueRows(for entries: ArraySlice<(offset: Int, element: Track)>) -> some View {
+        // Identify rows by their position since the same track can be enqueued multiple times
+        ForEach(entries, id: \.offset) { idx, track in
             HStack {
                 Artwork(url: track.artworkURL ?? track.user.avatarURL, onPlay: {
-                    player.play(Array(tracks), from: idx)
+                    player.resume(from: idx)
                 })
                 .frame(width: 60, height: 60)
                 VStack(alignment: .leading) {

@@ -174,10 +174,10 @@ extension NavigationPath {
         append(pathValue)
     }
     
-    mutating func append<V>(_ value: V,
-                            with playbackContext: [AnyHashable],
-                            startPlaybackAt start: V,
-                            player: StreamPlayer) where V == Track {
+    mutating func append(_ value: Track,
+                         with playbackContext: [AnyHashable],
+                         startPlaybackAt start: Track,
+                         player: StreamPlayer) {
         append(value,
                with: playbackContext,
                startPlaybackAt: start,

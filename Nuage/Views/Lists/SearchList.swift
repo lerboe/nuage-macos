@@ -19,53 +19,23 @@ struct SearchList: View {
     
     var publisher: AnyPublisher<Page<Some>, Error>
     
-    private var userPublisher: AnyPublisher<[User], Error> {
-        publisher.map { page in
-            return page.collection.compactMap { elem in
-                switch elem {
-                case .user(let user): return user
-                default: return nil
-                }
-            }
-        }
-        .eraseToAnyPublisher()
-    }
-    
-    private var trackPublisher: AnyPublisher<[Track], Error> {
-        publisher.map { page in
-            return page.collection.compactMap { elem in
-                switch elem {
-                case .track(let track): return track
-                default: return nil
-                }
-            }
-        }
-        .eraseToAnyPublisher()
-    }
-    
-    private var playlistPublisher: AnyPublisher<[UserPlaylist], Error> {
-        publisher.map { page in
-            return page.collection.compactMap { elem in
-                switch elem {
-                case .userPlaylist(let playlist): return playlist
-                default: return nil
-                }
-            }
-        }
-        .eraseToAnyPublisher()
-    }
-    
     @State private var users = [User]()
     @State private var tracks = [Track]()
     @State private var playlists = [UserPlaylist]()
+    @State private var didLoad = false
     
-    @State private var subscriptions = Set<AnyCancellable>()
+    @State private var subscription: AnyCancellable?
     
     var body: some View {
         Group {
-            if users.isEmpty && tracks.isEmpty && playlists.isEmpty {
+            if !didLoad {
                 ProgressView()
                     .progressViewStyle(.circular)
+            }
+            else if users.isEmpty && tracks.isEmpty && playlists.isEmpty {
+                Text("No Results")
+                    .font(.title2)
+                    .foregroundColor(.secondary)
             }
             else {
                 ScrollView {
@@ -104,22 +74,23 @@ struct SearchList: View {
             }
         }
         .navigationTitle("Search")
-        .onAppear {
-            userPublisher.replaceError(with: [])
-                .receive(on: RunLoop.main)
-                .assign(to: \.users, on: self)
-                .store(in: &subscriptions)
-            
-            trackPublisher.replaceError(with: [])
-                .receive(on: RunLoop.main)
-                .assign(to: \.tracks, on: self)
-                .store(in: &subscriptions)
-            
-            playlistPublisher.replaceError(with: [])
-                .receive(on: RunLoop.main)
-                .assign(to: \.playlists, on: self)
-                .store(in: &subscriptions)
-        }
+        .onAppear(perform: load)
+    }
+    
+    private func load() {
+        guard !didLoad && subscription == nil else { return }
+        
+        // Subscribe only once, every subscription would trigger another request
+        subscription = publisher
+            .map { $0.collection }
+            .replaceError(with: [])
+            .receive(on: RunLoop.main)
+            .sink { results in
+                users = results.compactMap { if case .user(let user) = $0 { return user } else { return nil } }
+                tracks = results.compactMap { if case .track(let track) = $0 { return track } else { return nil } }
+                playlists = results.compactMap { if case .userPlaylist(let playlist) = $0 { return playlist } else { return nil } }
+                didLoad = true
+            }
     }
     
     private func header(for section: SearchSection) -> () -> some View {

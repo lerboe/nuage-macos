@@ -32,9 +32,9 @@ struct InfiniteGrid<Element: Decodable&Identifiable&Filterable&Hashable, Item: V
         VStack {
             if isSearching {
                 TextField("Filter", text: $filter)
-                    .onChange(of: filter, perform: { _ in
+                    .onChange(of: filter) {
                         getNextPage()
-                    })
+                    }
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding()
                     .introspectTextField { $0.becomeFirstResponder() }

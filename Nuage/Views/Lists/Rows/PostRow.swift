@@ -6,14 +6,11 @@
 //
 
 import SwiftUI
-import Combine
 import SoundCloud
 
 struct PostRow: View {
     
     var post: Post
-    
-    @State private var subscriptions = Set<AnyCancellable>()
     
     var body: some View {
         VStack(alignment: .leading) {

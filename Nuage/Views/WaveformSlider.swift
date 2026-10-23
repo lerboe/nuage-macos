@@ -40,11 +40,12 @@ struct WaveformSlider<Value : BinaryFloatingPoint, MinValueLabel: View, MaxValue
         GeometryReader { geometry in
             let currentValue = updatingValue ?? value
             let rangeWidth = range.upperBound - range.lowerBound
-            let relativeValue = rangeWidth > 0 ? CGFloat(currentValue/rangeWidth) : CGFloat(0)
+            let relativeValue = rangeWidth > 0 ? CGFloat((currentValue - range.lowerBound)/rangeWidth) : CGFloat(0)
             let barValue = geometry.size.width * relativeValue
             let knobValue = geometry.size.width * relativeValue - knobDiameter/2.0
             
             let drag = DragGesture(minimumDistance: 0, coordinateSpace: .local).onChanged { gesture in
+                guard geometry.size.width > 0 else { return }
                 var newValue = Value(gesture.location.x/geometry.size.width) * rangeWidth + range.lowerBound
                 newValue = min(max(newValue, range.lowerBound), range.upperBound)
                 
@@ -101,7 +102,7 @@ struct WaveformSlider<Value : BinaryFloatingPoint, MinValueLabel: View, MaxValue
         self.knobColor = knobColor
         self.knobBorderColor = knobBorderColor ?? .primary.opacity(0.4)
         self.waveformForegroundColor = waveformForegroundColor ?? .primary
-        self.waveformBackgroundColor = knobColor ?? .primary.opacity(0.2)
+        self.waveformBackgroundColor = waveformBackgroundColor ?? .primary.opacity(0.2)
     }
     
 }

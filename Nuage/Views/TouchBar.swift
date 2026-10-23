@@ -6,15 +6,11 @@
 //
 
 import SwiftUI
-import Combine
 import SoundCloud
 
 struct TouchBar: View {
     
-    @State private var subscriptions = Set<AnyCancellable>()
-    
     @EnvironmentObject private var player: StreamPlayer
-    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         if let track = player.currentStream {
@@ -39,7 +35,7 @@ struct TouchBar: View {
     }
     
     @ViewBuilder private func progressSlider(for track: Track) -> some View {
-        let duration = TimeInterval(player.currentStream?.duration ?? 0)
+        let duration = TimeInterval(track.duration)
         let font = Font.system(size: 14).monospacedDigit()
         
         WaveformSlider(url: track.waveformURL, value: $player.progress, in: 0...duration, minValueLabel: { progress in

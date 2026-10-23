@@ -11,10 +11,10 @@ import SoundCloud
 
 struct UserDetail: View {
     
-    @State var user: User
+    var user: User
     @State private var loadedUser: User?
     @State private var selection: Tab = .stream
-    @State private var subscriptions = Set<AnyCancellable>()
+    @State private var subscription: AnyCancellable?
     
     var body: some View {
         let currentUser = loadedUser ?? user
@@ -53,6 +53,8 @@ struct UserDetail: View {
                 .padding(.top, 8)
 
             stream(for: selection)
+                // Following and followers share the same view type, force a new one to reset its state
+                .id(selection)
         }
         .toolbar {
             ToolbarItem(placement: .secondaryAction) {
@@ -63,12 +65,12 @@ struct UserDetail: View {
         }
         .navigationTitle(user.username)
         .onAppear {
-            SoundCloud.shared.get(.user(with: user.id))
+            guard loadedUser == nil && subscription == nil else { return }
+            
+            subscription = SoundCloud.shared.get(.user(with: user.id))
                 .replaceError(with: user)
-                .map { Optional($0) }
                 .receive(on: RunLoop.main)
-                .assign(to: \.loadedUser, on: self)
-                .store(in: &subscriptions)
+                .sink { loadedUser = $0 }
         }
     }
     

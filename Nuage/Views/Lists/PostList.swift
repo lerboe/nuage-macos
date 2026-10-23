@@ -13,8 +13,6 @@ struct PostList: View {
     
     private var publisher: InfinitePublisher<Post>
     
-    @EnvironmentObject private var player: StreamPlayer
-    
     var body: some View {
         InfiniteList(publisher: publisher) { post in
             PostRow(post: post)

@@ -6,14 +6,11 @@
 //
 
 import SwiftUI
-import Combine
 import SoundCloud
 
 struct TrackRow: View {
     
     var track: Track
-    
-    @State private var subscriptions = Set<AnyCancellable>()
     
     @Environment(\.onPlay) private var onPlay: () -> ()
     

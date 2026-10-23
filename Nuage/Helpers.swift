@@ -12,7 +12,7 @@ import Combine
 import URLImage
 import SoundCloud
 
-private var durationFormatter: DateComponentsFormatter = {
+private let durationFormatter: DateComponentsFormatter = {
     let formatter = DateComponentsFormatter()
     formatter.unitsStyle = .positional
     formatter.allowedUnits = [.hour, .minute, .second]
@@ -23,16 +23,6 @@ private var durationFormatter: DateComponentsFormatter = {
 
 func format<Time: BinaryFloatingPoint>(time: Time) -> String {
     return durationFormatter.string(from: TimeInterval(time)) ?? "00:00:00"
-//    guard var text = durationFormatter.string(from: TimeInterval(time)) else {
-//        return "00:00"
-//    }
-//    
-//    let idx = text.index(text.startIndex, offsetBy: 3)
-//    if text.prefix(upTo: idx) == "00:" {
-//        text = String(text.suffix(from: idx))
-//    }
-//    
-//    return text
 }
 
 private var countFormatter: NumberFormatter = {
@@ -144,7 +134,7 @@ extension Some: Filterable {
 extension Comment: Filterable {
     
     func contains(_ text: String) -> Bool {
-        return body.contains(text) || user.contains(text)
+        return body.containsCaseInsensitive(text) || user.contains(text)
     }
     
 }
@@ -187,10 +177,10 @@ extension DateComparable {
     
 }
 
-extension HistoryItem: DateComparable {}
-extension Post: DateComparable {}
-extension Track: DateComparable {}
-extension UserPlaylist: DateComparable {}
+extension HistoryItem: @retroactive Comparable, DateComparable {}
+extension Post: @retroactive Comparable, DateComparable {}
+extension Track: @retroactive Comparable, DateComparable {}
+extension UserPlaylist: @retroactive Comparable, DateComparable {}
 
 @ViewBuilder func RemoteImage(url: URL?, cornerRadius: CGFloat) -> some View {
     let placeholder = Rectangle()
@@ -236,14 +226,16 @@ extension View {
     
 }
 
+private let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+
 extension String {
     
     func withAttributedLinks(useAppURLScheme: Bool = true) -> AttributedString {
         var linkRanges = [(NSRange, URL)]()
         var handleRanges = [(NSRange, URL)]()
-        do {
-            let detector = try NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
-            detector.enumerateMatches(in: self, range: NSMakeRange(0, count)) { result, _, _ in
+        if let detector = linkDetector {
+            // NSRange is based on UTF-16 code units, not on Characters
+            detector.enumerateMatches(in: self, range: NSRange(location: 0, length: utf16.count)) { result, _, _ in
                 if let match = result,
                     var url = match.url {
                     if url.absoluteString.contains("soundcloud") && useAppURLScheme {
@@ -254,19 +246,24 @@ extension String {
                     linkRanges.append((match.range, url))
                 }
             }
+        }
+        
+        let handle = /@([a-zA-Z0-9_-]{3,})/
+        for match in self.matches(of: handle) {
+            let range = NSRange(match.range, in: self)
             
-            let handle = /@([a-zA-Z0-9_-]{3,})/
-            for match in self.matches(of: handle) {
-                let range = NSRange(match.range, in: self)
-                let username = match.output.1
-                let scheme = useAppURLScheme ? "nuage" : "https"
-                let url = URL(string: "\(scheme)://soundcloud.com/\(username)")!
-
+            // Skip handles that are part of a link or an email address
+            let previousCharacter = match.range.lowerBound > startIndex ? self[index(before: match.range.lowerBound)] : nil
+            let isPartOfWord = previousCharacter.map { $0.isLetter || $0.isNumber } ?? false
+            if isPartOfWord || linkRanges.contains(where: { NSIntersectionRange($0.0, range).length > 0 }) {
+                continue
+            }
+            
+            let username = match.output.1
+            let scheme = useAppURLScheme ? "nuage" : "https"
+            if let url = URL(string: "\(scheme)://soundcloud.com/\(username)") {
                 handleRanges.append((range, url))
             }
-        }
-        catch {
-            print("Failed to parse text: \(error)")
         }
         
         let attributedText = NSMutableAttributedString(string: self)

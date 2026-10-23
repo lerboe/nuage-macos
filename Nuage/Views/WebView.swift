@@ -15,14 +15,14 @@ typealias CookieHandler = ((HTTPCookie) -> ())
 struct WebView: NSViewRepresentable {
     
     private var url: URL
-    private var coordinator = WebViewCoordinator()
+    private var handlers = [(String, CookieHandler)]()
     
     init(url: URL) {
         self.url = url
     }
     
     func makeCoordinator() -> WebViewCoordinator {
-        return coordinator
+        return WebViewCoordinator()
     }
     
     func makeNSView(context: Self.Context) -> WKWebView {
@@ -34,16 +34,20 @@ struct WebView: NSViewRepresentable {
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         
-        coordinator.webView = view
+        context.coordinator.handlers = handlers
+        context.coordinator.webView = view
         
         return view
     }
     
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
+    func updateNSView(_ nsView: WKWebView, context: Context) {
+        context.coordinator.handlers = handlers
+    }
     
     func cookie(name: String, handler: @escaping CookieHandler) -> WebView {
-        coordinator.handlers.append((name, handler))
-        return self
+        var view = self
+        view.handlers.append((name, handler))
+        return view
     }
     
 }
@@ -54,7 +58,7 @@ class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, Observab
     var webView: WKWebView? {
         didSet {
             webView?.publisher(for: \.url)
-                .sink { _ in self.scanCookiesForAccessToken() }
+                .sink { [weak self] _ in self?.scanCookiesForAccessToken() }
                 .store(in: &cancellables)
         }
     }
@@ -88,9 +92,10 @@ class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, Observab
         guard let webView = webView else { return }
         let store = webView.configuration.websiteDataStore
         
+        let handlers = self.handlers
         store.httpCookieStore.getAllCookies { cookies in
             for cookie in cookies {
-                for (name, handler) in self.handlers {
+                for (name, handler) in handlers {
                     if name == cookie.name {
                         handler(cookie)
                     }

@@ -20,9 +20,7 @@ struct MainView: View {
     
     @State private var searchQuery = ""
     @FocusState private var isSearchFocused: Bool
-    @State private var subscriptions = Set<AnyCancellable>()
 
-//    @EnvironmentObject private var commands: Commands
     @EnvironmentObject private var commandSubjects: CommandSubject
     @EnvironmentObject private var player: StreamPlayer
     @Environment(\.playlists) private var playlists: [AnyPlaylist]
@@ -76,7 +74,7 @@ struct MainView: View {
         .searchFocused($isSearchFocused)
         .onReceive(commandSubjects.search) { isSearchFocused = true }
         .touchBar { TouchBar() }
-        .onChange(of: sidebarSelection) { _ in
+        .onChange(of: sidebarSelection) {
             navigationPath = NavigationPath()
             blockingNavigationPath = nil
         }
@@ -138,16 +136,18 @@ struct MainView: View {
                 let stream = SoundCloud.shared.get(.stream(), count: 50)
                 PostList(for: stream)
             case .likes:
-                let likes = SoundCloud.shared.$user.filter { $0 != nil}
-                    .flatMap { SoundCloud.shared.get(.trackLikes(of: $0!), count: 50) }
+                let likes = SoundCloud.shared.$user.compactMap { $0 }
+                    .first()
+                    .flatMap { SoundCloud.shared.get(.trackLikes(of: $0), count: 50) }
                     .eraseToAnyPublisher()
                 TrackList(for: likes)
             case .history:
                 let history = SoundCloud.shared.get(.history(), count: 50)
                 TrackList(for: history)
             case .following:
-                let following = SoundCloud.shared.$user.filter { $0 != nil }
-                    .flatMap { SoundCloud.shared.get(.followings(of: $0!), count: 50) }
+                let following = SoundCloud.shared.$user.compactMap { $0 }
+                    .first()
+                    .flatMap { SoundCloud.shared.get(.followings(of: $0), count: 50) }
                     .eraseToAnyPublisher()
                 UserGrid(for: following)
             case .userPlaylist(_, let id):
@@ -167,7 +167,7 @@ struct MainView: View {
                     navigationPath.append(user)
                 }
             } label: {
-                RemoteImage(url: SoundCloud.shared.user?.avatarURL, cornerRadius: 15)
+                RemoteImage(url: soundCloud.user?.avatarURL, cornerRadius: 15)
                     .frame(width: 30, height: 30)
             }
             .buttonStyle(.plain)
@@ -188,7 +188,6 @@ struct MainView_Previews: PreviewProvider {
         MainView()
             .environmentObject(player)
             .environmentObject(CommandSubject())
-//            .environmentObject(Commands())
     }
     
 }

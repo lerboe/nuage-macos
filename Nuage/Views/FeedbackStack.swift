@@ -27,19 +27,14 @@ struct FeedbackStack<T: SoundCloudIdentifiable>: View {
     
     private var isRepost: Bool? {
         if let track = item as? Track {
-            return posts
-                .filter { $0.isTrack && $0.isRepost }
-                .map { $0.tracks.first! }
-                .contains(track)
+            return posts.isReposted(track)
         }
         else if let playlist = item as? (any Playlist) {
+            // Only user playlists can be reposted
             guard let playlist = playlist as? UserPlaylist else {
                 return nil
             }
-            return posts
-                .filter { !$0.isTrack && $0.isRepost}
-                .compactMap { $0.playlist }
-                .contains(playlist)
+            return posts.isReposted(playlist)
         }
         else {
             return false
@@ -104,13 +99,6 @@ struct FeedbackStack<T: SoundCloudIdentifiable>: View {
             .disabled(item == nil)
             .buttonStyle(.borderless)
         }
-    }
-    
-    @ViewBuilder private func resizableImage(name: String, height: CGFloat? = 16, width: CGFloat? = 16) -> some View {
-        Image(systemName: name)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(width: width, height: height)
     }
     
     init(for playlist: T, horizontal: Bool = true) where T: Playlist {

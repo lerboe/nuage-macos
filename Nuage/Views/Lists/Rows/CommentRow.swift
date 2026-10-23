@@ -6,14 +6,11 @@
 //
 
 import SwiftUI
-import Combine
 import SoundCloud
 
 struct CommentRow: View {
     
     var comment: Comment
-    
-    @State private var subscriptions = Set<AnyCancellable>()
     
     var body: some View {
         HStack {

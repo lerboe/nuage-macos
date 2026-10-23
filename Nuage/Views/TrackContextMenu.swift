@@ -20,6 +20,8 @@ private struct TrackContextMenu: ViewModifier {
     
     @EnvironmentObject private var player: StreamPlayer
     @Environment(\.playlists) private var playlists: [AnyPlaylist]
+    @Environment(\.likes) private var likes: [Track]
+    @Environment(\.posts) private var posts: [Post]
     @Environment(\.toggleLikeTrack) private var toggleLike: (Track) -> () -> ()
     @Environment(\.toggleRepostTrack) private var toggleRepost: (Track) -> () -> ()
     @Environment(\.onPlay) private var onPlay: () -> ()
@@ -31,34 +33,17 @@ private struct TrackContextMenu: ViewModifier {
                 player.enqueue([track])
             }
             Divider()
-            Button("Go to User") {
-                print("haha")
-            }
-            Divider()
-            Button("Like", action: toggleLike(track))
-            Button("Repost", action: toggleRepost(track))
-            Menu("Add to Playlist") {
-                Button("New Playlist") {
-                    print("new playlist lel")
-                }
-
-                let playlists = playlists
-                    .compactMap { $0.userPlaylist }
-                    .filter { $0.secretToken != nil }
-                if playlists.count > 0 {
-                    Divider()
+            Button(likes.contains(track) ? "Unlike" : "Like", action: toggleLike(track))
+            Button(posts.isReposted(track) ? "Remove Repost" : "Repost", action: toggleRepost(track))
+            
+            let playlists = playlists
+                .compactMap { $0.userPlaylist }
+                .filter { $0.secretToken != nil }
+            if let newTrackID = Int(track.id), playlists.count > 0 {
+                Menu("Add to Playlist") {
                     ForEach(playlists, id: \.id) { playlist in
                         Button(playlist.title) {
-                            let newTrackID = Int(track.id)!
-                            
-                            soundCloud.get(.userPlaylist(playlist.id))
-                                .map { ($0.trackIDs ?? []).map { Int($0)! } }
-                                .flatMap { soundCloud.get(.set(playlist, trackIDs: $0 + [newTrackID])) }
-                                .receive(on: RunLoop.main)
-                                .sink(receiveCompletion: { _ in
-                                }, receiveValue: { success in
-                                    print("added track to playlist: \(success)")
-                                }).store(in: &subscriptions)
+                            add(trackID: newTrackID, to: playlist)
                         }
                     }
                 }
@@ -70,6 +55,19 @@ private struct TrackContextMenu: ViewModifier {
                 NSPasteboard.general.setString(text, forType: .string)
             }
         }
+    }
+    
+    private func add(trackID: Int, to playlist: UserPlaylist) {
+        soundCloud.get(.userPlaylist(playlist.id))
+            .map { ($0.trackIDs ?? []).compactMap { Int($0) } }
+            .flatMap { soundCloud.get(.set(playlist, trackIDs: $0 + [trackID])) }
+            .receive(on: RunLoop.main)
+            .sink(receiveCompletion: { completion in
+                if case let .failure(error) = completion {
+                    print("Failed to add track to playlist: \(error)")
+                }
+            }, receiveValue: { _ in })
+            .store(in: &subscriptions)
     }
 
 }

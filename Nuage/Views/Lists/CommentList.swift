@@ -13,8 +13,6 @@ struct CommentList: View {
     
     var publisher: InfinitePublisher<Comment>
     
-    @EnvironmentObject private var player: StreamPlayer
-    
     var body: some View {
         InfiniteList(publisher: publisher) { comment in
             CommentRow(comment: comment)
