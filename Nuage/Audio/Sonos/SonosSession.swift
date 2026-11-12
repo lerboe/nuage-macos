@@ -33,9 +33,31 @@ final class SonosSession {
     private var requestedVolume: Int?
 
     private(set) var currentTrackID: String?
+    private var currentTrack: TrackInfo?
+    private var currentSource: SonosSource?
     private var currentURI: URL?
     /// Whether the speaker started playing the current track, so that a stop means it ended.
     private var didStartCurrentTrack = false
+
+    /// A relayed stream starts at this position, the speaker reports its position relative to it.
+    private var positionOffset: TimeInterval = 0
+    /// Whether the user wants the speaker to play, as opposed to being paused.
+    private var wantsPlayback = false
+    /// The track restarts at this position once resumed, e.g. after a relayed stream was seeked
+    /// while paused or the speaker lost its connection.
+    private var pendingRestartPosition: TimeInterval?
+    /// The last position the speaker reported for the current track.
+    private var lastPosition: TimeInterval = 0
+    /// The length of the audio the speaker plays, which can be shorter than the track (e.g. a preview).
+    private var streamDuration: TimeInterval = 0
+
+    /// The details the speaker shows for the current track.
+    struct TrackInfo {
+        var title: String
+        var artist: String
+        var artworkURL: URL?
+        var duration: TimeInterval
+    }
 
     init(group: SonosGroup) {
         self.group = group
@@ -48,38 +70,101 @@ final class SonosSession {
 
     // MARK: - Commands
 
-    /// Plays the audio file at `url` on the speakers, starting at `position`.
-    func load(trackID: String, url: URL, metadata: String, at position: TimeInterval) {
+    /// Plays the track from `source` on the speakers, starting at `position`.
+    func load(trackID: String, info: TrackInfo, source: SonosSource, at position: TimeInterval) {
         currentTrackID = trackID
+        currentTrack = info
+        currentSource = source
+        wantsPlayback = true
+        pendingRestartPosition = nil
+        restart(at: position)
+    }
+
+    /// Hands the current track to the speaker again, starting at `position`.
+    /// Relayed streams can't be seeked, they're requested from `position` instead.
+    private func restart(at position: TimeInterval) {
+        lastPosition = position
+        streamDuration = 0
+
+        switch currentSource {
+        case .file(let url)?:
+            positionOffset = 0
+            start(url, mimeType: "audio/mpeg", seekingTo: position)
+        case let .relay(mimeType, duration, url)?:
+            positionOffset = position
+            streamDuration = duration
+            start(url(position), mimeType: mimeType, seekingTo: nil)
+        case nil:
+            break
+        }
+    }
+
+    private func start(_ url: URL, mimeType: String, seekingTo position: TimeInterval?) {
+        guard let info = currentTrack else { return }
+
         currentURI = url
         didStartCurrentTrack = false
 
+        let metadata = SonosClient.metadata(title: info.title,
+                                            artist: info.artist,
+                                            artworkURL: info.artworkURL,
+                                            duration: info.duration,
+                                            uri: url,
+                                            mimeType: mimeType)
         perform("load") { client in
             try await client.setTransportURI(url, metadata: metadata)
             try await client.play()
-            if position >= 1 {
+            if let position = position, position >= 1 {
                 try await client.seek(to: position)
             }
         }
     }
 
     func play() {
+        wantsPlayback = true
+        if let position = pendingRestartPosition {
+            pendingRestartPosition = nil
+            restart(at: position)
+            return
+        }
+
         perform("play") { try await $0.play() }
     }
 
     func pause() {
+        wantsPlayback = false
         perform("pause") { try await $0.pause() }
     }
 
     func stop() {
         currentTrackID = nil
+        currentTrack = nil
+        currentSource = nil
         currentURI = nil
         didStartCurrentTrack = false
+        wantsPlayback = false
+        pendingRestartPosition = nil
         perform("stop") { try await $0.stop() }
     }
 
     func seek(to position: TimeInterval) {
-        perform("seek") { try await $0.seek(to: position) }
+        lastPosition = position
+
+        var isRelayed = false
+        if case .relay? = currentSource {
+            isRelayed = true
+        }
+
+        // A track that has to be restarted anyway just starts at the new position
+        if pendingRestartPosition != nil || (isRelayed && !wantsPlayback) {
+            pendingRestartPosition = position
+        }
+        else if isRelayed {
+            restart(at: position)
+        }
+        else {
+            perform("seek") { try await $0.seek(to: position) }
+        }
     }
 
     func setVolume(_ volume: Float) {
@@ -173,13 +258,42 @@ final class SonosSession {
 
         if didStartCurrentTrack && currentState == .stopped {
             didStartCurrentTrack = false
+            wantsPlayback = false
+
+            // Stopping well before the end means the speaker lost the stream, e.g. its connection to the relay.
+            // The track is then paused where it stopped, instead of skipping to the next one.
+            let duration = streamDuration
+            if duration > 0 && lastPosition < duration - 10 {
+                print("Sonos stopped at \(Int(lastPosition))s of \(Int(duration))s, resuming from there on play")
+                pendingRestartPosition = lastPosition
+                onEvent?(.status(isPlaying: false, position: lastPosition, volume: Float(currentVolume) / 100))
+                return
+            }
+
+            // Playing a finished relayed stream again has to request it from the start
+            if case .relay? = currentSource {
+                pendingRestartPosition = 0
+            }
             onEvent?(.trackDidFinish)
             return
         }
 
         let isPlaying = isPlayingCurrentTrack && (currentState == .playing || currentState == .transitioning)
+        let position = pendingRestartPosition ?? (currentInfo.position + positionOffset)
+        // A stopped speaker reports 0, which isn't where the track was left off
+        if isPlayingCurrentTrack && pendingRestartPosition == nil && currentState != .stopped {
+            lastPosition = position
+            // Files report their length, relayed streams know it from their playlist
+            if currentInfo.duration > 0, case .file? = currentSource {
+                streamDuration = currentInfo.duration
+            }
+            if case .relay? = currentSource, let uri = currentURI {
+                // Lets the relay continue from here if the speaker requests the stream again
+                Task { await SonosRelay.shared.setPlaybackPosition(position, forStreamAt: uri) }
+            }
+        }
         onEvent?(.status(isPlaying: isPlaying,
-                         position: isPlayingCurrentTrack ? currentInfo.position : nil,
+                         position: isPlayingCurrentTrack ? position : nil,
                          volume: Float(currentVolume) / 100))
     }
 

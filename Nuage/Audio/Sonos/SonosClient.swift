@@ -29,6 +29,8 @@ enum SonosTransportState: String, Sendable {
 
 struct SonosPositionInfo: Sendable {
     var position: TimeInterval
+    /// 0 if the speaker doesn't know the duration, e.g. of a relayed stream.
+    var duration: TimeInterval
     var trackURI: String
 }
 
@@ -110,6 +112,7 @@ struct SonosClient: Sendable {
     func positionInfo() async throws -> SonosPositionInfo {
         let response = try await perform("GetPositionInfo", on: .avTransport, arguments: [("InstanceID", "0")])
         return SonosPositionInfo(position: parse(position: response["RelTime"]),
+                                 duration: parse(position: response["TrackDuration"]),
                                  trackURI: response["TrackURI"] ?? "")
     }
 
@@ -176,7 +179,7 @@ struct SonosClient: Sendable {
     // MARK: - Metadata
 
     /// Returns the DIDL-Lite metadata that makes the speaker show the track's details.
-    static func metadata(title: String, artist: String, artworkURL: URL?, duration: TimeInterval, uri: URL) -> String {
+    static func metadata(title: String, artist: String, artworkURL: URL?, duration: TimeInterval, uri: URL, mimeType: String) -> String {
         let artwork = artworkURL.map { "<upnp:albumArtURI>\($0.absoluteString.xmlEscaped)</upnp:albumArtURI>" } ?? ""
 
         return """
@@ -185,7 +188,7 @@ struct SonosClient: Sendable {
         xmlns:r="urn:schemas-rinconnetworks-com:metadata-1-0/" \
         xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/">\
         <item id="-1" parentID="-1" restricted="true">\
-        <res protocolInfo="http-get:*:audio/mpeg:*" duration="\(format(position: duration))">\(uri.absoluteString.xmlEscaped)</res>\
+        <res protocolInfo="http-get:*:\(mimeType):*" duration="\(format(position: duration))">\(uri.absoluteString.xmlEscaped)</res>\
         <dc:title>\(title.xmlEscaped)</dc:title>\
         <dc:creator>\(artist.xmlEscaped)</dc:creator>\
         \(artwork)\

@@ -298,14 +298,24 @@ final class StreamPlayer {
             do {
                 // The URL is resolved right before playing since it expires
                 let url = try await track.audioFileURL()
+
+                // Sonos speakers can't play HLS streams, this Mac relays them instead
+                let source: SonosSource
+                if url.pathExtension == "m3u8" {
+                    source = try await SonosRelay.shared.source(playlistURL: url,
+                                                                resolvePlaylistURL: { try await track.audioFileURL() },
+                                                                reachableFrom: session.group.coordinatorURL)
+                }
+                else {
+                    source = .file(url)
+                }
                 guard let self = self, !Task.isCancelled, self.sonosSession === session else { return }
 
-                let metadata = SonosClient.metadata(title: track.title,
-                                                    artist: track.user.username,
-                                                    artworkURL: track.artworkURL ?? track.user.avatarURL,
-                                                    duration: TimeInterval(track.duration),
-                                                    uri: url)
-                session.load(trackID: track.id, url: url, metadata: metadata, at: position)
+                let info = SonosSession.TrackInfo(title: track.title,
+                                                  artist: track.user.username,
+                                                  artworkURL: track.artworkURL ?? track.user.avatarURL,
+                                                  duration: TimeInterval(track.duration))
+                session.load(trackID: track.id, info: info, source: source, at: position)
                 self.updateNowPlayingInfo()
             }
             catch {
