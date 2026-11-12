@@ -21,6 +21,7 @@ protocol Streamable {
 private let volumeKey = "volume"
 private let shuffleQueueKey = "shuffleQueue"
 private let repeatQueueKey = "repeatQueue"
+private let playbackRateKey = "playbackRate"
 
 @MainActor
 @Observable
@@ -87,6 +88,19 @@ final class StreamPlayer {
         }
     }
 
+    static let playbackRates: [Float] = [0.75, 1, 1.25, 1.5, 1.75, 2]
+
+    /// The speed of the playback on this Mac. Sonos speakers only support the normal speed.
+    var playbackRate: Float = 1 {
+        didSet {
+            guard playbackRate != oldValue else { return }
+
+            UserDefaults.standard.set(playbackRate, forKey: playbackRateKey)
+            applyPlaybackRate()
+            updateNowPlayingInfo()
+        }
+    }
+
     var volume: Float = 0.5 {
         didSet {
             let clampedVolume = min(max(volume, 0), 1)
@@ -150,8 +164,13 @@ final class StreamPlayer {
         if defaults.object(forKey: volumeKey) != nil {
             self.volume = min(max(defaults.float(forKey: volumeKey), 0), 1)
         }
+        let rate = defaults.float(forKey: playbackRateKey)
+        if StreamPlayer.playbackRates.contains(rate) {
+            self.playbackRate = rate
+        }
         // Property observers aren't called during initialization
         player.volume = volume
+        applyPlaybackRate()
 
         let interval = CMTime(value: 1, timescale: 1)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
@@ -173,6 +192,14 @@ final class StreamPlayer {
     isolated deinit {
         if let timeObserver = timeObserver {
             player.removeTimeObserver(timeObserver)
+        }
+    }
+
+    private func applyPlaybackRate() {
+        // `play()` starts at the default rate, a running playback has to be adjusted directly
+        player.defaultRate = playbackRate
+        if player.rate != 0 {
+            player.rate = playbackRate
         }
     }
 
@@ -559,9 +586,12 @@ final class StreamPlayer {
         }
 
         let currentTime = time?.seconds ?? (sonosSession == nil ? player.currentTime().seconds : progress)
+        // Lets the system extrapolate the elapsed time at the right speed
+        let rate = sonosSession == nil ? playbackRate : 1
 
         if nowPlayingTrackID == currentStream.id, var info = center.nowPlayingInfo {
             info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
+            info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = rate
             center.nowPlayingInfo = info
         }
         else {
@@ -570,7 +600,8 @@ final class StreamPlayer {
                 MPMediaItemPropertyTitle: currentStream.title,
                 MPMediaItemPropertyArtist: currentStream.user.username,
                 MPMediaItemPropertyPlaybackDuration: currentStream.duration,
-                MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime
+                MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
+                MPNowPlayingInfoPropertyDefaultPlaybackRate: rate
             ]
 
             loadArtwork(for: currentStream)

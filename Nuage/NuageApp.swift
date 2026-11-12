@@ -231,7 +231,18 @@ struct NuageApp: App {
 
             Toggle("Repeat", isOn: $player.repeatQueue)
                 .keyboardShortcut("r", modifiers: [.command])
-            
+
+            Divider()
+
+            Picker("Speed", selection: $player.playbackRate) {
+                ForEach(StreamPlayer.playbackRates, id: \.self) { rate in
+                    Text(rate.formatted() + "x")
+                        .tag(rate)
+                }
+            }
+            // Sonos speakers only play at the normal speed
+            .disabled(player.sonosGroup != nil)
+
             Divider()
             
             Button("Volume Up") {
