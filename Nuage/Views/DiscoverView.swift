@@ -11,15 +11,33 @@ struct DiscoverView: View {
     @State private var selections = [Selection]()
     @State private var didLoad = false
 
+    @Environment(\.search) private var search: Search?
+
     var body: some View {
         Group {
             if selections.isEmpty && !didLoad {
                 ProgressView().progressViewStyle(.circular)
             } else {
+                let displayedSelections = search.map { search in
+                    selections.compactMap { $0.filtered(by: search.query) }
+                } ?? selections
+
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 24) {
-                        ForEach(selections) { selection in
+                        // The section of the main view is left out if nothing in it matches
+                        if let search, !displayedSelections.isEmpty {
+                            SearchSectionHeader(title: search.scope)
+                        }
+                        ForEach(displayedSelections) { selection in
                             SelectionRow(selection: selection)
+                        }
+                        if let search {
+                            VStack(alignment: .leading, spacing: 0) {
+                                if !displayedSelections.isEmpty {
+                                    SearchSectionFooter()
+                                }
+                                SearchResults(query: search.query)
+                            }
                         }
                     }
                     .padding()
@@ -144,6 +162,29 @@ private extension AnyItem {
         case .user(let user): return "user:\(user.id)"
         case .playlist(let playlist): return "playlist:\(playlist.id)"
         }
+    }
+
+}
+
+private extension AnyItem {
+
+    func contains(_ text: String) -> Bool {
+        switch self {
+        case .user(let user): return user.contains(text)
+        case .playlist(let playlist):
+            return playlist.userPlaylist?.contains(text) ?? playlist.systemPlaylist?.contains(text) ?? false
+        }
+    }
+
+}
+
+private extension Selection {
+
+    /// The selection with only the items containing `text`, or `nil` if none does.
+    func filtered(by text: String) -> Selection? {
+        var selection = self
+        selection.items = items.filter { $0.contains(text) }
+        return selection.items.isEmpty ? nil : selection
     }
 
 }

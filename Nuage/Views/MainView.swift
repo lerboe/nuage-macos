@@ -29,15 +29,15 @@ struct MainView: View {
     
     private var isPlayerVisible: Bool { player.queue.count > 0 }
     
+    private var search: Search? {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty ? nil : Search(query: query, scope: sidebarSelection.title)
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             NavigationSplitView(sidebar: sidebar) {
                 NavigationStack(path: $navigationPath) {
-                    let presentSearch: Binding<Bool> = Binding(
-                        get: { searchQuery.count > 0 },
-                        set: { if !$0 { searchQuery = "" } }
-                    )
-                    
                     root(for: sidebarSelection)
                         .navigationDestinationWithPlaybackContext(for: Track.self) { TrackDetail(track: $0) }
                         .navigationDestination(for: User.self) { UserDetail(user: $0) }
@@ -51,10 +51,6 @@ struct MainView: View {
                             case .track(let track): TrackList(request: .trackStation(basedOn: track))
                             case .artist(let user): TrackList(request: .artistStation(basedOn: user))
                             }
-                        }
-                        .navigationDestination(isPresented: presentSearch) {
-                            SearchList(query: searchQuery)
-                                .id(searchQuery)
                         }
                 }
             }
@@ -77,6 +73,13 @@ struct MainView: View {
         .searchable(text: $searchQuery, placement: .toolbar)
         .searchFocused($isSearchFocused)
         .onChange(of: menuCommands.searchRequests) { isSearchFocused = true }
+        .onChange(of: search == nil) {
+            // Searching shows the filtered main view, so go back to it when a search starts
+            if search != nil {
+                navigationPath = NavigationPath()
+                blockingNavigationPath = nil
+            }
+        }
         .touchBar { TouchBar() }
         .onChange(of: sidebarSelection) {
             navigationPath = NavigationPath()
@@ -162,6 +165,8 @@ struct MainView: View {
             }
         }
             .navigationTitle(item.title)
+            // Only the main view is filtered, not the views pushed onto it
+            .environment(\.search, search)
             .id(item.id) // Set id so that SwiftUI knows when to render new view
     }
     

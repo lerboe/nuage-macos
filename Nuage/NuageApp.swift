@@ -127,12 +127,7 @@ extension EnvironmentValues {
 @Observable
 final class MenuCommands {
     
-    private(set) var filterRequests = 0
     private(set) var searchRequests = 0
-    
-    func requestFilter() {
-        filterRequests += 1
-    }
     
     func requestSearch() {
         searchRequests += 1
@@ -204,15 +199,16 @@ struct NuageApp: App {
             }
         }
         .defaultSize(width: 800, height: 400)
+        // Without it, no window opens at launch if the window was closed before quitting,
+        // because then the restored state contains no windows.
+        .defaultLaunchBehavior(.presented)
         .commands(content: commands)
     }
     
     @CommandsBuilder private func commands() -> some Commands {
         CommandGroup(after: .textEditing) {
-            Button("Filter", action: menuCommands.requestFilter)
-                .keyboardShortcut("f", modifiers: .command)
             Button("Search", action: menuCommands.requestSearch)
-                .keyboardShortcut("l", modifiers: .command)
+                .keyboardShortcut("f", modifiers: .command)
         }
         CommandGroup(before: .toolbar) {
             Menu("Playlists") {

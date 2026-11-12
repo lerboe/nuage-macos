@@ -23,14 +23,18 @@ struct ArrayView<ID, Element: Decodable&Identifiable, ContentView: View>: View {
 
     private var content: ([Element], @escaping () -> ()) -> ContentView
 
+    @Environment(\.search) private var search: Search?
+
     var body: some View {
         Group {
-            if ids?.isEmpty ?? false {
+            let isEmpty = ids?.isEmpty ?? false
+            // While searching, the content still shows the search results
+            if isEmpty && search == nil {
                 Text("Empty")
                     .font(.title2)
                     .foregroundColor(.secondary)
             }
-            else if elements.isEmpty {
+            else if elements.isEmpty && !isEmpty {
                 ProgressView()
                     .progressViewStyle(.circular)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

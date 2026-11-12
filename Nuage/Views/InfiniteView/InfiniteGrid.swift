@@ -6,17 +6,14 @@
 //
 
 import SwiftUI
-import GridStack
 
 struct InfiniteGrid<Element: Decodable&Identifiable&Filterable&Hashable, Item: View>: View {
-    
+
     private var source: InfiniteSource<Element>
     private var item: ([Element], Int) -> Item
-    @State private var filter = ""
-    @State private var isSearching = false
-    
-    @Environment(MenuCommands.self) private var commands
-    
+
+    @Environment(\.search) private var search: Search?
+
     var body: some View {
         switch source {
         case .page(let firstPage):
@@ -25,46 +22,44 @@ struct InfiniteGrid<Element: Decodable&Identifiable&Filterable&Hashable, Item: V
             ArrayView(loadIDs: loadIDs, loadElements: loadElements, content: grid)
         }
     }
-    
+
     @ViewBuilder func grid(for elements: [Element], getNextPage: @escaping () -> ()) -> some View {
-        let displayedElements = (filter.count > 0) ? elements.filter { $0.contains(filter) } : elements
-        
-        VStack {
-            if isSearching {
-                TextField("Filter", text: $filter)
-                    .onChange(of: filter) {
-                        getNextPage()
-                    }
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .padding()
-                    .introspectTextField { $0.becomeFirstResponder() }
-                    .onExitCommand(perform: stopFiltering)
-            }
-            
-            GridStack(minCellWidth: 100, spacing: 20, numItems: displayedElements.count, alignment: .leading) { idx, width in
-                item(displayedElements, idx)
-                    .id(idx)
-                    .onAppear {
-                    if idx == elements.count/2 {
-                        getNextPage()
+        let displayedElements = search.map { search in elements.filter { $0.contains(search.query) } } ?? elements
+
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // The section of the main view is left out if nothing in it matches
+                if let search, !displayedElements.isEmpty {
+                    SearchSectionHeader(title: search.scope)
+                }
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 20)], alignment: .leading, spacing: 20) {
+                    ForEach(0..<displayedElements.count, id: \.self) { idx in
+                        item(displayedElements, idx)
+                            .id(idx)
+                            .onAppear {
+                                if idx == displayedElements.count/2 {
+                                    getNextPage()
+                                }
+                            }
                     }
                 }
+
+                if let search {
+                    if !displayedElements.isEmpty {
+                        SearchSectionFooter()
+                    }
+                    SearchResults(query: search.query)
+                }
             }
-            .onChange(of: commands.filterRequests) { withAnimation { isSearching = true } }
-            .onExitCommand(perform: stopFiltering)
+            .padding(20)
         }
+        .onChange(of: search?.query) { getNextPage() }
     }
-    
+
     init(source: InfiniteSource<Element>, @ViewBuilder item: @escaping ([Element], Int) -> Item) {
         self.source = source
         self.item = item
     }
-    
-    private func stopFiltering() {
-        withAnimation {
-            isSearching = false
-            filter = ""
-        }
-    }
-    
+
 }

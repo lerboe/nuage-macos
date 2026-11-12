@@ -24,10 +24,13 @@ struct PageView<Element: Decodable&Identifiable, ContentView: View>: View {
 
     private var content: ([Element], @escaping () -> ()) -> ContentView
 
+    @Environment(\.search) private var search: Search?
+
     var body: some View {
         Group {
             if pages != nil {
-                if elements.isEmpty {
+                // While searching, the content still shows the search results
+                if elements.isEmpty && search == nil {
                     Text("Empty")
                         .font(.title2)
                         .foregroundColor(.secondary)
