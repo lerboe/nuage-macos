@@ -230,6 +230,10 @@ private struct RoutePicker: NSViewRepresentable {
     func makeNSView(context: Context) -> AVRoutePickerView {
         let view = AVRoutePickerView()
         view.isRoutePickerButtonBordered = false
+        // Match the borderless SwiftUI buttons next to it, which draw in the
+        // secondary label color. The active (AirPlaying) states keep the default tint.
+        view.setRoutePickerButtonColor(.secondaryLabelColor, for: .normal)
+        view.setRoutePickerButtonColor(.labelColor, for: .normalHighlighted)
         view.player = player
         return view
     }
