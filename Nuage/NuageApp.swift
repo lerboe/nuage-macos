@@ -153,7 +153,10 @@ struct NuageApp: App {
     @State private var loggedIn: Bool
     
     var body: some Scene {
-        WindowGroup {
+        // An explicit id gives the window a stable frame autosave name.
+        // Without one SwiftUI derives it from the content's type name,
+        // which changes whenever the view hierarchy does.
+        WindowGroup(id: "main") {
             // A ZStack rather than a Group, which would apply the modifier
             // to each branch separately. Login and main share one window.
             ZStack {
@@ -185,7 +188,6 @@ struct NuageApp: App {
                     }
                 }
             }
-            .persistWindowFrame()
         }
         .defaultSize(width: 800, height: 400)
         .commands(content: commands)
