@@ -94,10 +94,19 @@ final class StreamPlayer {
                 volume = clampedVolume
             }
 
-            player.volume = volume
-            UserDefaults.standard.set(volume, forKey: volumeKey)
+            guard shouldForwardVolume else { return }
+
+            if let sonosSession = sonosSession {
+                // The speaker's volume is independent from the one on this Mac
+                sonosSession.setVolume(volume)
+            }
+            else {
+                player.volume = volume
+                UserDefaults.standard.set(volume, forKey: volumeKey)
+            }
         }
     }
+    @ObservationIgnored private var shouldForwardVolume = true
 
     @ObservationIgnored private var shouldSeek = true
     var progress: TimeInterval = 0.0 {
@@ -111,12 +120,21 @@ final class StreamPlayer {
             }
 
             let time = CMTime(seconds: progress, preferredTimescale: 600)
-            player.seek(to: time)
+            if let sonosSession = sonosSession {
+                sonosSession.seek(to: progress)
+            }
+            else {
+                player.seek(to: time)
+            }
             updateNowPlayingInfo(with: time)
         }
     }
 
     private(set) var isPlaying = false
+
+    /// The Sonos group that plays the audio, nil if it plays on this Mac.
+    private(set) var sonosGroup: SonosGroup?
+    @ObservationIgnored private var sonosSession: SonosSession?
 
     @ObservationIgnored private var nowPlayingTrackID: String?
 
@@ -138,7 +156,8 @@ final class StreamPlayer {
         let interval = CMTime(value: 1, timescale: 1)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             MainActor.assumeIsolated {
-                self?.setProgressWithoutSeeking(time.seconds)
+                guard let self = self, self.sonosSession == nil else { return }
+                self.setProgressWithoutSeeking(time.seconds)
             }
         }
 
@@ -158,13 +177,135 @@ final class StreamPlayer {
     }
 
     private func timeControlStatusDidChange() {
+        guard sonosSession == nil else { return }
+
         isPlaying = (player.timeControlStatus != .paused)
         updateNowPlayingInfo()
+    }
+
+    // MARK: - Sonos
+
+    /// Continues playback on `group`, the speakers then stream the audio themselves.
+    func play(on group: SonosGroup) {
+        guard group.id != sonosGroup?.id else { return }
+
+        let wasPlaying = isPlaying
+        let position = progress
+        sonosSession?.pause()
+        endSonosSession()
+
+        // Stop the local playback, it continues from `progress` when switching back
+        streamTask?.cancel()
+        didPlayToEndTask?.cancel()
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+
+        let session = SonosSession(group: group)
+        session.onEvent = { [weak self] event in
+            self?.handle(event)
+        }
+        sonosSession = session
+        sonosGroup = group
+        isPlaying = false
+        session.start()
+
+        setProgressWithoutSeeking(position)
+        if wasPlaying {
+            resume()
+        }
+    }
+
+    /// Continues playback on this Mac and pauses the Sonos group.
+    func playOnThisMac() {
+        guard let sonosSession = sonosSession else { return }
+
+        let wasPlaying = isPlaying
+        sonosSession.pause()
+        endSonosSession()
+
+        if wasPlaying {
+            resume()
+        }
+    }
+
+    private func endSonosSession() {
+        guard let sonosSession = sonosSession else { return }
+
+        streamTask?.cancel()
+        sonosSession.invalidate()
+        self.sonosSession = nil
+        sonosGroup = nil
+        isPlaying = false
+
+        // Restore the volume of this Mac
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: volumeKey) != nil {
+            setVolumeWithoutForwarding(defaults.float(forKey: volumeKey))
+        }
+        player.volume = volume
+        updateNowPlayingInfo()
+    }
+
+    private func handle(_ event: SonosSession.Event) {
+        switch event {
+        case let .status(isPlaying, position, volume):
+            self.isPlaying = isPlaying
+            if let position = position {
+                setProgressWithoutSeeking(position)
+            }
+            setVolumeWithoutForwarding(volume)
+            updateNowPlayingInfo()
+        case .trackDidFinish:
+            advanceForward()
+        case .didDisconnect:
+            endSonosSession()
+        }
+    }
+
+    /// Plays `track` on the Sonos group, starting at `position`.
+    private func load(_ track: Track, on session: SonosSession, at position: TimeInterval) {
+        isPlaying = true
+
+        streamTask?.cancel()
+        streamTask = Task { [weak self] in
+            do {
+                // The URL is resolved right before playing since it expires
+                let url = try await track.audioFileURL()
+                guard let self = self, !Task.isCancelled, self.sonosSession === session else { return }
+
+                let metadata = SonosClient.metadata(title: track.title,
+                                                    artist: track.user.username,
+                                                    artworkURL: track.artworkURL ?? track.user.avatarURL,
+                                                    duration: TimeInterval(track.duration),
+                                                    uri: url)
+                session.load(trackID: track.id, url: url, metadata: metadata, at: position)
+                self.updateNowPlayingInfo()
+            }
+            catch {
+                guard !Task.isCancelled else { return }
+                print("Failed to stream track to Sonos: \(error)")
+                self?.isPlaying = false
+            }
+        }
     }
 
     // MARK: - Playback
 
     func restartPlayback() {
+        if let sonosSession = sonosSession {
+            guard let track = currentStream else { return }
+
+            setProgressWithoutSeeking(0)
+            if sonosSession.currentTrackID == track.id {
+                sonosSession.seek(to: 0)
+                sonosSession.play()
+            }
+            else {
+                load(track, on: sonosSession, at: 0)
+            }
+            return
+        }
+
         player.seek(to: .zero)
         player.play()
     }
@@ -185,15 +326,35 @@ final class StreamPlayer {
               queueOrder.indices.contains(idx) else { return }
 
         let newStream = queue[queueOrder[idx]]
+
+        if let sonosSession = sonosSession {
+            let isCurrentStream = (currentStream == newStream)
+            currentStreamIndex = idx
+
+            if isCurrentStream && sonosSession.currentTrackID == newStream.id {
+                isPlaying = true
+                sonosSession.play()
+            }
+            else {
+                // Continue where the track was left off, e.g. after switching from this Mac
+                let position = isCurrentStream ? progress : 0
+                setProgressWithoutSeeking(position)
+                load(newStream, on: sonosSession, at: position)
+            }
+            return
+        }
+
         if currentStream == newStream && player.currentItem != nil {
             currentStreamIndex = idx
             player.play()
             return
         }
 
+        // Continue where the track was left off, e.g. after switching from Sonos
+        let position = (currentStream == newStream) ? progress : 0
         currentStreamIndex = idx
         player.replaceCurrentItem(with: nil)
-        setProgressWithoutSeeking(0)
+        setProgressWithoutSeeking(position)
 
         // Cancel the loading of a previously requested track,
         // so that a slow response can't override a newer selection.
@@ -205,6 +366,10 @@ final class StreamPlayer {
 
                 let item = AVPlayerItem(asset: asset)
                 self.player.replaceCurrentItem(with: item)
+                if position > 0 {
+                    await self.player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
+                    guard !Task.isCancelled else { return }
+                }
                 self.player.play()
                 self.advanceForwardWhenFinished(playing: item)
                 self.updateNowPlayingInfo()
@@ -228,7 +393,15 @@ final class StreamPlayer {
     }
 
     func pause() {
-        player.pause()
+        if let sonosSession = sonosSession {
+            // The speakers might not have started yet
+            streamTask?.cancel()
+            isPlaying = false
+            sonosSession.pause()
+        }
+        else {
+            player.pause()
+        }
     }
 
     /// Replaces the queue with `tracks` and starts playing the track at `idx`.
@@ -264,7 +437,8 @@ final class StreamPlayer {
     func advanceBackward() {
         guard let idx = currentStreamIndex else { return }
 
-        if idx > 0 && player.currentTime() < CMTime(value: 15, timescale: 1) {
+        let elapsed = sonosSession == nil ? player.currentTime().seconds : progress
+        if idx > 0 && elapsed < 15 {
             resume(from: idx - 1)
         }
         else {
@@ -282,6 +456,7 @@ final class StreamPlayer {
 
     func reset() {
         pause()
+        sonosSession?.stop()
         streamTask?.cancel()
         didPlayToEndTask?.cancel()
         player.replaceCurrentItem(with: nil)
@@ -325,6 +500,12 @@ final class StreamPlayer {
         shouldSeek = false
         self.progress = progress
         shouldSeek = true
+    }
+
+    private func setVolumeWithoutForwarding(_ volume: Float) {
+        shouldForwardVolume = false
+        self.volume = volume
+        shouldForwardVolume = true
     }
 
     // MARK: - MPNowPlayingInfoCenter
@@ -377,7 +558,7 @@ final class StreamPlayer {
             return
         }
 
-        let currentTime = (time ?? player.currentTime()).seconds
+        let currentTime = time?.seconds ?? (sonosSession == nil ? player.currentTime().seconds : progress)
 
         if nowPlayingTrackID == currentStream.id, var info = center.nowPlayingInfo {
             info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
@@ -393,6 +574,11 @@ final class StreamPlayer {
             ]
 
             loadArtwork(for: currentStream)
+        }
+
+        if sonosSession != nil {
+            center.playbackState = isPlaying ? .playing : .paused
+            return
         }
 
         switch player.timeControlStatus {

@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 54;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -15,6 +15,7 @@
 		49332BAE25961A3B0034A161 /* PlaylistRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49332BAD25961A3B0034A161 /* PlaylistRow.swift */; };
 		49332BCF25962E910034A161 /* SearchList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49332BCE25962E910034A161 /* SearchList.swift */; };
 		493AB3552A6E668C00E20656 /* FeedbackStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 493AB3542A6E668C00E20656 /* FeedbackStack.swift */; };
+		494C4DC430A644000048660A /* SonosSpeakerList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 494C4DC330A644000048660A /* SonosSpeakerList.swift */; };
 		4964297B25DFCF04008AFBD5 /* CommentList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4964297A25DFCF04008AFBD5 /* CommentList.swift */; };
 		4964299225E054E9008AFBD5 /* CommentRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4964299125E054E9008AFBD5 /* CommentRow.swift */; };
 		4969F3C9257CFA7F0048E29B /* NuageApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4969F3C8257CFA7F0048E29B /* NuageApp.swift */; };
@@ -63,6 +64,7 @@
 		49332BAD25961A3B0034A161 /* PlaylistRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistRow.swift; sourceTree = "<group>"; };
 		49332BCE25962E910034A161 /* SearchList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchList.swift; sourceTree = "<group>"; };
 		493AB3542A6E668C00E20656 /* FeedbackStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackStack.swift; sourceTree = "<group>"; };
+		494C4DC330A644000048660A /* SonosSpeakerList.swift */ = {isa = PBXFileReference; path = SonosSpeakerList.swift; sourceTree = "<group>"; };
 		4964297A25DFCF04008AFBD5 /* CommentList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentList.swift; sourceTree = "<group>"; };
 		4964299125E054E9008AFBD5 /* CommentRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentRow.swift; sourceTree = "<group>"; };
 		4969F3C5257CFA7F0048E29B /* Nuage.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Nuage.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -101,6 +103,10 @@
 		49FEEBDE2A5B56C9002C8865 /* TouchBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchBar.swift; sourceTree = "<group>"; };
 		D15C0BE200000001000000DC /* DiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		494C4DBC30A6439D0048660A /* Sonos */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Sonos; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		4969F3C2257CFA7F0048E29B /* Frameworks */ = {
@@ -209,6 +215,7 @@
 			children = (
 				4969F40E257CFB100048E29B /* Stream.swift */,
 				4969F40F257CFB100048E29B /* StreamPlayer.swift */,
+				494C4DBC30A6439D0048660A /* Sonos */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -234,6 +241,7 @@
 				493AB3542A6E668C00E20656 /* FeedbackStack.swift */,
 				498C72F22A790AF300AA1AAF /* StatsStack.swift */,
 				49FEEBDE2A5B56C9002C8865 /* TouchBar.swift */,
+				494C4DC330A644000048660A /* SonosSpeakerList.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -263,6 +271,9 @@
 			);
 			dependencies = (
 				49328ECB25C4B70F00A2A34D /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				494C4DBC30A6439D0048660A /* Sonos */,
 			);
 			name = Nuage;
 			packageProductDependencies = (
@@ -335,6 +346,7 @@
 				4969F433257CFB100048E29B /* TrackList.swift in Sources */,
 				4969F435257CFB100048E29B /* PageView.swift in Sources */,
 				49A99D7A2A7454EE001B8BCB /* Navigation.swift in Sources */,
+				494C4DC430A644000048660A /* SonosSpeakerList.swift in Sources */,
 				49FA14BB2589635800CEF925 /* ArrayView.swift in Sources */,
 				4969F42A257CFB100048E29B /* Stream.swift in Sources */,
 				49FEEBDF2A5B56C9002C8865 /* TouchBar.swift in Sources */,

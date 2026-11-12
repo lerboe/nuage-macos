@@ -16,6 +16,7 @@ struct PlayerView: View {
     
     @State private var showingVolumeControls = false
     @State private var showingQueue = false
+    @State private var showingSonosSpeakers = false
     
     @Environment(StreamPlayer.self) private var player
     
@@ -130,6 +131,15 @@ struct PlayerView: View {
             RoutePicker(player: player.player)
                 .frame(width: 20, height: 20)
                 .help("Output Device")
+
+            Button(action: { showingSonosSpeakers = true }) {
+                resizableImage(name: "hifispeaker.2.fill")
+            }
+            .buttonStyle(.borderless)
+            .if(showingSonosSpeakers) { $0.foregroundColor(.primary) }
+            .if(player.sonosGroup != nil) { $0.foregroundColor(.accentColor) }
+            .help(player.sonosGroup.map { "Playing on \($0.name)" } ?? "Sonos")
+            .popover(isPresented: $showingSonosSpeakers) { SonosSpeakerList() }
             
             Button(action: { self.showingQueue.toggle() }) {
                 resizableImage(name: "text.line.first.and.arrowtriangle.forward")
