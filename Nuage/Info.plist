@@ -38,6 +38,10 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_sonos._tcp</string>
+	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Nuage uses the local network to find and control your Sonos speakers.</string>
 </dict>

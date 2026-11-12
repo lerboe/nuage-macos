@@ -21,7 +21,7 @@ struct PlayerView: View {
     @State private var showingVolumeControls = false
     @State private var showingQueue = false
     @State private var showingSonosSpeakers = false
-    @AppStorage(showSonosSpeakersKey) private var showSonosSpeakers = true
+    @AppStorage(showSonosSpeakersKey) private var showSonosSpeakers = false
     @AppStorage(showAirPlaySpeakersKey) private var showAirPlaySpeakers = true
     
     @Environment(StreamPlayer.self) private var player

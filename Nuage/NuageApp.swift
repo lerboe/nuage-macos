@@ -150,7 +150,7 @@ struct NuageApp: App {
     
     @State private var showCreatedPlaylists = true
     @State private var showLikedPlaylists = true
-    @AppStorage(showSonosSpeakersKey) private var showSonosSpeakers = true
+    @AppStorage(showSonosSpeakersKey) private var showSonosSpeakers = false
     @AppStorage(showAirPlaySpeakersKey) private var showAirPlaySpeakers = true
     
     @State private var loggedIn: Bool
@@ -192,10 +192,15 @@ struct NuageApp: App {
                     }
                 }
             }
-            // Finds the speakers at launch and when they are enabled in the menu
+            // Finds the speakers at launch and when they are enabled in the menu.
+            // The local network isn't accessed at all while Sonos is disabled.
             .task(id: showSonosSpeakers) {
-                guard showSonosSpeakers else { return }
-                await sonosBrowser.search()
+                if showSonosSpeakers {
+                    await sonosBrowser.start()
+                }
+                else {
+                    sonosBrowser.stop()
+                }
             }
         }
         .defaultSize(width: 800, height: 400)
