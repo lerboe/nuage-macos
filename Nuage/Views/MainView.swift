@@ -27,6 +27,8 @@ struct MainView: View {
     @Environment(\.showLikedPlaylists) private var showLikedPlaylists: Bool
     @Environment(\.showCreatedPlaylists) private var showCreatedPlaylists: Bool
     
+    private var isPlayerVisible: Bool { player.queue.count > 0 }
+    
     var body: some View {
         VStack(spacing: 0) {
             NavigationSplitView(sidebar: sidebar) {
@@ -56,16 +58,20 @@ struct MainView: View {
                         }
                 }
             }
-            if player.queue.count > 0 {
-                Divider()
-                PlayerView {
-                    if let track = player.currentStream, navigationPath != blockingNavigationPath {
-                        navigationPath.append(track, with: player.queue, startPlaybackAt: track, player: player)
-                        blockingNavigationPath = navigationPath
+            if isPlayerVisible {
+                VStack(spacing: 0) {
+                    Divider()
+                    PlayerView {
+                        if let track = player.currentStream, navigationPath != blockingNavigationPath {
+                            navigationPath.append(track, with: player.queue, startPlaybackAt: track, player: player)
+                            blockingNavigationPath = navigationPath
+                        }
                     }
                 }
+                .transition(.move(edge: .bottom))
             }
         }
+        .animation(.spring(duration: 0.35), value: isPlayerVisible)
         .toolbarRole(.editor)
         .toolbar(content: toolbar)
         .searchable(text: $searchQuery, placement: .toolbar)
