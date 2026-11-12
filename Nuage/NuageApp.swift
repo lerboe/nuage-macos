@@ -144,6 +144,7 @@ final class MenuCommands {
 struct NuageApp: App {
     
     @State private var player = StreamPlayer()
+    @State private var sonosBrowser = SonosBrowser()
     @State private var library = Library()
     @State private var menuCommands = MenuCommands()
     
@@ -166,6 +167,7 @@ struct NuageApp: App {
                     MainView()
                         .frame(minWidth: 600, minHeight: 400)
                         .environment(player)
+                        .environment(sonosBrowser)
                         .environment(menuCommands)
                         .environment(\.showCreatedPlaylists, showCreatedPlaylists)
                         .environment(\.showLikedPlaylists, showLikedPlaylists)
@@ -189,6 +191,11 @@ struct NuageApp: App {
                         loggedIn = true
                     }
                 }
+            }
+            // Finds the speakers at launch and when they are enabled in the menu
+            .task(id: showSonosSpeakers) {
+                guard showSonosSpeakers else { return }
+                await sonosBrowser.search()
             }
         }
         .defaultSize(width: 800, height: 400)

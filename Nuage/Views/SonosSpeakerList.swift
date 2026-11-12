@@ -10,11 +10,8 @@ import SwiftUI
 /// Lets the user choose whether to play on this Mac or on a Sonos group.
 struct SonosSpeakerList: View {
 
-    @State private var groups = [SonosGroup]()
-    @State private var isSearching = false
-    @State private var error: Error?
-
     @Environment(StreamPlayer.self) private var player
+    @Environment(SonosBrowser.self) private var browser
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -22,12 +19,12 @@ struct SonosSpeakerList: View {
                 Text("Play On")
                     .font(.headline)
                 Spacer()
-                if isSearching {
+                if browser.isSearching {
                     ProgressView()
                         .controlSize(.small)
                 }
                 else {
-                    Button(action: { Task { await search() } }) {
+                    Button(action: { Task { await browser.search() } }) {
                         Image(systemName: "arrow.clockwise")
                     }
                     .buttonStyle(.borderless)
@@ -41,21 +38,20 @@ struct SonosSpeakerList: View {
                 player.playOnThisMac()
             }
 
-            ForEach(groups) { group in
+            ForEach(browser.groups) { group in
                 row(title: group.name, systemImage: "hifispeaker.fill", isSelected: player.sonosGroup?.id == group.id) {
                     player.play(on: group)
                 }
             }
 
-            if !isSearching && groups.isEmpty {
-                Text(error == nil ? "No Sonos speakers found" : "Couldn't search the local network")
+            if !browser.isSearching && browser.groups.isEmpty {
+                Text(browser.error == nil ? "No Sonos speakers found" : "Couldn't search the local network")
                     .foregroundStyle(.secondary)
                     .padding(.top, 4)
             }
         }
         .padding()
         .frame(width: 240)
-        .task { await search() }
     }
 
     @ViewBuilder private func row(title: String, systemImage: String, isSelected: Bool, action: @escaping () -> ()) -> some View {
@@ -75,22 +71,6 @@ struct SonosSpeakerList: View {
         }
         .buttonStyle(.plain)
         .padding(.vertical, 2)
-    }
-
-    private func search() async {
-        guard !isSearching else { return }
-
-        isSearching = true
-        defer { isSearching = false }
-
-        do {
-            groups = try await SonosDiscovery.groups()
-            error = nil
-        }
-        catch {
-            print("Failed to discover Sonos speakers: \(error)")
-            self.error = error
-        }
     }
 
 }

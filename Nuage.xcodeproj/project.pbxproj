@@ -64,7 +64,7 @@
 		49332BAD25961A3B0034A161 /* PlaylistRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistRow.swift; sourceTree = "<group>"; };
 		49332BCE25962E910034A161 /* SearchList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchList.swift; sourceTree = "<group>"; };
 		493AB3542A6E668C00E20656 /* FeedbackStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackStack.swift; sourceTree = "<group>"; };
-		494C4DC330A644000048660A /* SonosSpeakerList.swift */ = {isa = PBXFileReference; path = SonosSpeakerList.swift; sourceTree = "<group>"; };
+		494C4DC330A644000048660A /* SonosSpeakerList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SonosSpeakerList.swift; sourceTree = "<group>"; };
 		4964297A25DFCF04008AFBD5 /* CommentList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentList.swift; sourceTree = "<group>"; };
 		4964299125E054E9008AFBD5 /* CommentRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentRow.swift; sourceTree = "<group>"; };
 		4969F3C5257CFA7F0048E29B /* Nuage.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Nuage.app; sourceTree = BUILT_PRODUCTS_DIR; };
