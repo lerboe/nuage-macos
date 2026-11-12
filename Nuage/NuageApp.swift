@@ -149,6 +149,8 @@ struct NuageApp: App {
     
     @State private var showCreatedPlaylists = true
     @State private var showLikedPlaylists = true
+    @AppStorage(showSonosSpeakersKey) private var showSonosSpeakers = true
+    @AppStorage(showAirPlaySpeakersKey) private var showAirPlaySpeakers = true
     
     @State private var loggedIn: Bool
     
@@ -204,6 +206,10 @@ struct NuageApp: App {
             Menu("Playlists") {
                 Toggle("Show Created", isOn: $showCreatedPlaylists)
                 Toggle("Show Liked", isOn: $showLikedPlaylists)
+            }
+            Menu("Speakers") {
+                Toggle("Sonos", isOn: $showSonosSpeakers)
+                Toggle("AirPlay", isOn: $showAirPlaySpeakers)
             }
         }
         playbackMenu()

@@ -10,6 +10,10 @@ import SwiftUI
 import AVKit
 import SoundCloud
 
+/// User defaults keys of the View > Speakers menu.
+let showSonosSpeakersKey = "showSonosSpeakers"
+let showAirPlaySpeakersKey = "showAirPlaySpeakers"
+
 struct PlayerView: View {
     
     var onTrackDetailTap: () -> ()
@@ -17,6 +21,8 @@ struct PlayerView: View {
     @State private var showingVolumeControls = false
     @State private var showingQueue = false
     @State private var showingSonosSpeakers = false
+    @AppStorage(showSonosSpeakersKey) private var showSonosSpeakers = true
+    @AppStorage(showAirPlaySpeakersKey) private var showAirPlaySpeakers = true
     
     @Environment(StreamPlayer.self) private var player
     
@@ -128,18 +134,22 @@ struct PlayerView: View {
             .if(showingVolumeControls) { $0.foregroundColor(.primary) }
             .popover(isPresented: $showingVolumeControls, content: volumeControls)
             
-            RoutePicker(player: player.player)
-                .frame(width: 20, height: 20)
-                .help("Output Device")
-
-            Button(action: { showingSonosSpeakers = true }) {
-                resizableImage(name: "hifispeaker.2.fill")
+            if showAirPlaySpeakers {
+                RoutePicker(player: player.player)
+                    .frame(width: 20, height: 20)
+                    .help("Output Device")
             }
-            .buttonStyle(.borderless)
-            .if(showingSonosSpeakers) { $0.foregroundColor(.primary) }
-            .if(player.sonosGroup != nil) { $0.foregroundColor(.accentColor) }
-            .help(player.sonosGroup.map { "Playing on \($0.name)" } ?? "Sonos")
-            .popover(isPresented: $showingSonosSpeakers) { SonosSpeakerList() }
+
+            if showSonosSpeakers {
+                Button(action: { showingSonosSpeakers = true }) {
+                    resizableImage(name: "hifispeaker.2.fill")
+                }
+                .buttonStyle(.borderless)
+                .if(showingSonosSpeakers) { $0.foregroundColor(.primary) }
+                .if(player.sonosGroup != nil) { $0.foregroundColor(.accentColor) }
+                .help(player.sonosGroup.map { "Playing on \($0.name)" } ?? "Sonos")
+                .popover(isPresented: $showingSonosSpeakers) { SonosSpeakerList() }
+            }
             
             Button(action: { self.showingQueue.toggle() }) {
                 resizableImage(name: "text.line.first.and.arrowtriangle.forward")
