@@ -73,6 +73,7 @@ struct TrackDetail: View {
                     Image(systemName: "dot.radiowaves.left.and.right")
                 }
             }
+            ProfileToolbarItem()
         }
         .padding(16)
         .navigationTitle(track.title)

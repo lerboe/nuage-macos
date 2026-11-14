@@ -60,6 +60,7 @@ struct UserDetail: View {
                     Image(systemName: "dot.radiowaves.left.and.right")
                 }
             }
+            ProfileToolbarItem()
         }
         .navigationTitle(user.username)
         .task {

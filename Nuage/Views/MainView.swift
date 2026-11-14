@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import AppKit
 import SoundCloud
 
 struct MainView: View {
@@ -45,12 +46,16 @@ struct MainView: View {
                         .navigationDestination(for: AnyPlaylist.self) { playlist in
                             TrackList(playlist: playlist)
                                 .navigationTitle(playlist.title)
+                                .toolbar { ProfileToolbarItem() }
                         }
                         .navigationDestination(for: Station.self) { station in
-                            switch station {
-                            case .track(let track): TrackList(request: .trackStation(basedOn: track))
-                            case .artist(let user): TrackList(request: .artistStation(basedOn: user))
+                            Group {
+                                switch station {
+                                case .track(let track): TrackList(request: .trackStation(basedOn: track))
+                                case .artist(let user): TrackList(request: .artistStation(basedOn: user))
+                                }
                             }
+                            .toolbar { ProfileToolbarItem() }
                         }
                 }
             }
@@ -69,9 +74,9 @@ struct MainView: View {
         }
         .animation(.spring(duration: 0.35), value: isPlayerVisible)
         .toolbarRole(.editor)
-        .toolbar(content: toolbar)
-        .searchable(text: $searchQuery, placement: .toolbar)
+        .searchable(text: $searchQuery, placement: .toolbarPrincipal)
         .searchFocused($isSearchFocused)
+        .focusesToolbarSearchFieldOnClick(focus: { isSearchFocused = true }, clear: { searchQuery = "" })
         .onChange(of: menuCommands.searchRequests) { isSearchFocused = true }
         .onChange(of: search == nil) {
             // Searching shows the filtered main view, so go back to it when a search starts
@@ -120,6 +125,7 @@ struct MainView: View {
                 }
             }
         }
+        .toolbar(removing: .sidebarToggle)
     }
     
     @ViewBuilder private func sidebarMenu(for detail: SidebarItem) -> some View {
@@ -165,6 +171,7 @@ struct MainView: View {
             }
         }
             .navigationTitle(item.title)
+            .toolbar { ProfileToolbarItem() }
             // Only the main view is filtered, not the views pushed onto it
             .environment(\.search, search)
             .id(item.id) // Set id so that SwiftUI knows when to render new view
@@ -176,18 +183,102 @@ struct MainView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
-    @ToolbarContentBuilder private func toolbar() -> some ToolbarContent {
-        ToolbarItemGroup {
-            Button {
-                if let user = soundCloud.user {
-                    navigationPath.append(user)
+}
+
+/// Shows the logged in user's avatar and opens their profile.
+/// Toolbar items of a parent view are placed before the ones of its children,
+/// so every view in the navigation stack adds this item last to keep it the trailing-most element.
+struct ProfileToolbarItem: ToolbarContent {
+    
+    private var soundCloud: SoundCloud { .shared }
+    
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            if let user = soundCloud.user {
+                NavigationLink(value: user) {
+                    RemoteImage(url: user.avatarURL, cornerRadius: 15)
+                        .frame(width: 30, height: 30)
                 }
-            } label: {
-                RemoteImage(url: soundCloud.user?.avatarURL, cornerRadius: 15)
-                    .frame(width: 30, height: 30)
+                .buttonStyle(.plain)
+                .focusable(false)
             }
-            .buttonStyle(.plain)
         }
+        .sharedBackgroundVisibility(.hidden)
+    }
+    
+}
+
+/// Works around the principal toolbar item being laid out narrower than the search field it draws.
+/// Only clicks within the item's frame reach the field, so clicks on the outer parts of the field
+/// are caught here and focus the field manually, or clear it if they hit the clear button.
+private struct ToolbarSearchFieldClickFocus: ViewModifier {
+    
+    var focus: () -> Void
+    var clear: () -> Void
+    @State private var monitor: Any?
+    
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                guard monitor == nil else { return }
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+                    handle(event) ? nil : event
+                }
+            }
+            .onDisappear {
+                if let monitor {
+                    NSEvent.removeMonitor(monitor)
+                }
+                monitor = nil
+            }
+    }
+    
+    /// Returns whether the event was consumed.
+    private func handle(_ event: NSEvent) -> Bool {
+        // The toolbar lives in the window's frame view, the superview of the content view
+        guard let window = event.window,
+              let frameView = window.contentView?.superview,
+              let searchField = frameView.firstDescendant(ofType: NSSearchField.self),
+              !searchField.isHiddenOrHasHiddenAncestor else { return false }
+        
+        let location = searchField.convert(event.locationInWindow, from: nil)
+        guard searchField.bounds.contains(location) else { return false }
+        
+        // Clicks that already reach the field are handled by AppKit
+        if let hitView = frameView.hitTest(event.locationInWindow), hitView.isDescendant(of: searchField) {
+            return false
+        }
+        
+        if !searchField.stringValue.isEmpty,
+           let cell = searchField.cell as? NSSearchFieldCell,
+           cell.cancelButtonRect(forBounds: searchField.bounds).contains(location) {
+            clear()
+        }
+        else {
+            focus()
+        }
+        return true
+    }
+    
+}
+
+private extension NSView {
+    
+    func firstDescendant<T: NSView>(ofType type: T.Type) -> T? {
+        for subview in subviews {
+            if let match = subview as? T ?? subview.firstDescendant(ofType: type) {
+                return match
+            }
+        }
+        return nil
+    }
+    
+}
+
+private extension View {
+    
+    func focusesToolbarSearchFieldOnClick(focus: @escaping () -> Void, clear: @escaping () -> Void) -> some View {
+        modifier(ToolbarSearchFieldClickFocus(focus: focus, clear: clear))
     }
     
 }

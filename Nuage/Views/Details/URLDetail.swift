@@ -20,13 +20,17 @@ struct URLDetail: View {
             Text("Could not open \(url.absoluteString)")
                 .font(.title2)
                 .foregroundColor(.secondary)
+                .toolbar { ProfileToolbarItem() }
         case nil: loadingIndicator()
+                .toolbar { ProfileToolbarItem() }
         case .track(let track): TrackDetail(track: track)
                 .playbackContext([track])
                 .playbackStart(at: track)
         case .user(let user): UserDetail(user: user)
         case .userPlaylist(let playlist): TrackList(request: .userPlaylist(playlist.id))
+                .toolbar { ProfileToolbarItem() }
         case .systemPlaylist(let playlist): TrackList(request: .systemPlaylist(playlist.urn))
+                .toolbar { ProfileToolbarItem() }
         }
     }
     
