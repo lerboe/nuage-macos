@@ -76,12 +76,9 @@ struct PlayerView: View {
     @ViewBuilder private func trackDetails() -> some View {
         if let track = player.currentStream {
             VStack(alignment: .leading, spacing: 4) {
-                Text(track.user.username)
+                MarqueeText(track.user.username)
                     .bold()
-                    .lineLimit(1)
-                Text(track.title)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                MarqueeText(track.title)
                     .foregroundColor(.secondary)
             }
         }
@@ -238,6 +235,129 @@ struct PlayerView: View {
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: width, height: height)
+    }
+    
+}
+
+/// A single line of text that, if it doesn't fit, slowly scrolls back and forth
+/// and fades out at the edges where it's cut off.
+private struct MarqueeText: View {
+    
+    var text: String
+    
+    init(_ text: String) {
+        self.text = text
+    }
+    
+    var body: some View {
+        // A new identity per string discards any in-flight animation and starts over at the leading edge.
+        MarqueeContent(text: text)
+            .id(text)
+    }
+    
+}
+
+private struct MarqueeContent: View {
+    
+    var text: String
+    
+    private let speed: CGFloat = 10 // points per second
+    private let repetitions = 3
+    private let pause: Duration = .seconds(2)
+    private let fadeWidth: CGFloat = 12
+    
+    @State private var textWidth: CGFloat = 0
+    @State private var containerWidth: CGFloat = 0
+    @State private var offset: CGFloat = 0
+    @State private var fadesLeadingEdge = false
+    @State private var fadesTrailingEdge = false
+    
+    private var overflow: CGFloat { max(textWidth - containerWidth, 0) }
+    
+    var body: some View {
+        // The hidden, truncating text determines the layout exactly like a regular label would.
+        // The scrolling text lives in an overlay so its full width never affects the layout.
+        Text(text)
+            .lineLimit(1)
+            .hidden()
+            .overlay(alignment: .leading) {
+                Text(text)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { textWidth = $0 }
+                    .offset(x: offset)
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { containerWidth = $0 }
+            .modifier(EdgeFadeModifier(isEnabled: overflow > 0, mask: edgeFadeMask))
+            .task(id: overflow) {
+                await scroll()
+            }
+    }
+    
+    private var edgeFadeMask: some View {
+        HStack(spacing: 0) {
+            edgeFade(startPoint: .trailing, endPoint: .leading, isVisible: fadesLeadingEdge)
+            Rectangle()
+            edgeFade(startPoint: .leading, endPoint: .trailing, isVisible: fadesTrailingEdge)
+        }
+    }
+    
+    private func edgeFade(startPoint: UnitPoint, endPoint: UnitPoint, isVisible: Bool) -> some View {
+        ZStack {
+            LinearGradient(colors: [.black, .clear], startPoint: startPoint, endPoint: endPoint)
+            Rectangle()
+                .opacity(isVisible ? 0 : 1)
+        }
+        .frame(width: fadeWidth)
+    }
+    
+    /// Scrolls the text back and forth a few times, then rests at the leading edge.
+    /// Starts over when the task gets cancelled because the label's size changed.
+    private func scroll() async {
+        offset = 0
+        fadesLeadingEdge = false
+        fadesTrailingEdge = overflow > 0
+        guard overflow > 0 else { return }
+        
+        let distance = overflow
+        let duration = Double(distance / speed)
+        let fadeAnimation = Animation.easeInOut(duration: 0.3)
+        
+        do {
+            for _ in 0..<repetitions {
+                try await Task.sleep(for: pause)
+                withAnimation(.easeInOut(duration: duration)) { offset = -distance }
+                withAnimation(fadeAnimation) { fadesLeadingEdge = true }
+                try await Task.sleep(for: .seconds(duration))
+                withAnimation(fadeAnimation) { fadesTrailingEdge = false }
+                
+                try await Task.sleep(for: pause)
+                withAnimation(.easeInOut(duration: duration)) { offset = 0 }
+                withAnimation(fadeAnimation) { fadesTrailingEdge = true }
+                try await Task.sleep(for: .seconds(duration))
+                withAnimation(fadeAnimation) { fadesLeadingEdge = false }
+            }
+        }
+        catch {
+            // Cancelled
+        }
+    }
+    
+    /// Only masks when necessary since masking renders the text offscreen, which drops the material's vibrancy.
+    private struct EdgeFadeModifier<Mask: View>: ViewModifier {
+        
+        var isEnabled: Bool
+        var mask: Mask
+        
+        func body(content: Content) -> some View {
+            if isEnabled {
+                content.mask(mask)
+            }
+            else {
+                content.clipped()
+            }
+        }
+        
     }
     
 }

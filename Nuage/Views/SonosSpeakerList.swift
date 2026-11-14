@@ -27,6 +27,7 @@ struct SonosSpeakerList: View {
                     Button(action: { Task { await browser.search() } }) {
                         Image(systemName: "arrow.clockwise")
                     }
+                    .focusable(false)
                     .buttonStyle(.borderless)
                     .help("Search Again")
                 }
@@ -69,6 +70,8 @@ struct SonosSpeakerList: View {
             }
             .contentShape(Rectangle())
         }
+        // Otherwise the popover focuses its first button, which draws a focus ring when it opens
+        .focusable(false)
         .buttonStyle(.plain)
         .padding(.vertical, 2)
     }
