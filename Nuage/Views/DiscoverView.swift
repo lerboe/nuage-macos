@@ -50,8 +50,15 @@ struct DiscoverView: View {
     private func load() async {
         guard !didLoad else { return }
 
+        let load = { try await SoundCloud.shared.get(.mixedSelections(), limit: 10).collection }
+
+        // Show the cached selections until the fresh ones are loaded
+        if selections.isEmpty, let cachedSelections = try? await cached(load) {
+            selections = cachedSelections
+        }
+
         do {
-            selections = try await SoundCloud.shared.get(.mixedSelections(), limit: 10).collection
+            selections = try await refreshed(load)
         }
         catch {
             // The task is cancelled when the view disappears and restarted when it reappears

@@ -33,6 +33,16 @@ private var countFormatter: NumberFormatter = {
     return formatter
 }()
 
+/// Performs `load` with its responses only read from the cache. It throws a `CacheMissError` if they weren't cached.
+nonisolated(nonsending) func cached<T>(_ load: nonisolated(nonsending) () async throws -> T) async throws -> T {
+    return try await ResponseCache.$policy.withValue(.cacheOnly, operation: load)
+}
+
+/// Performs `load` with its responses loaded from the network and written to the cache.
+nonisolated(nonsending) func refreshed<T>(_ load: nonisolated(nonsending) () async throws -> T) async throws -> T {
+    return try await ResponseCache.$policy.withValue(.reload, operation: load)
+}
+
 func format(count: Int) -> String {
     if count < 1_000 { return String(count) }
 

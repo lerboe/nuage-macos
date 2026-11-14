@@ -17,6 +17,9 @@ struct PageView<Element: Decodable&Identifiable, ContentView: View>: View {
     }
     @State private var pages: [Page<Element>]?
 
+    /// Whether the first page was loaded from the network, rather than only from the cache.
+    @State private var didRefresh = false
+
     /// The number of pages that should be loaded. Increasing it triggers loading the next page.
     @State private var requestedPageCount = 1
 
@@ -47,18 +50,27 @@ struct PageView<Element: Decodable&Identifiable, ContentView: View>: View {
         }
         .task {
             // Don't reload (and thereby lose all loaded pages) when the view reappears
-            guard pages == nil else { return }
+            guard !didRefresh else { return }
+
+            // Show the cached page until the fresh one is loaded
+            if pages == nil, let page = try? await cached(firstPage) {
+                pages = [page]
+            }
 
             do {
-                pages = [try await firstPage()]
+                refresh(with: try await refreshed(firstPage))
             }
             catch {
                 // The task is cancelled when the view disappears and restarted when it reappears
                 guard !Task.isCancelled else { return }
 
                 print("Failed to load page: \(error)")
-                pages = []
+                // Keep showing the cached page, if there is one
+                if pages == nil {
+                    pages = []
+                }
             }
+            didRefresh = true
         }
         .task(id: requestedPageCount) {
             guard let pages = pages,
@@ -68,6 +80,9 @@ struct PageView<Element: Decodable&Identifiable, ContentView: View>: View {
 
             do {
                 let page = try await SoundCloud.shared.get(next: lastPage)
+
+                // The pages were replaced by fresh ones in the meantime
+                guard self.pages?.last?.next == lastPage.next else { return }
                 self.pages?.append(page)
             }
             catch {
@@ -81,6 +96,19 @@ struct PageView<Element: Decodable&Identifiable, ContentView: View>: View {
          @ViewBuilder content: @escaping ([Element], @escaping () -> ()) -> ContentView) {
         self.firstPage = firstPage
         self.content = content
+    }
+
+    /// Replaces the first page by the fresh `page`. If it contains the same elements,
+    /// the following pages are kept, so that the user's scroll position isn't lost.
+    private func refresh(with page: Page<Element>) {
+        if var pages, let first = pages.first, first.collection.map(\.id) == page.collection.map(\.id) {
+            pages[0] = page
+            self.pages = pages
+        }
+        else {
+            pages = [page]
+            requestedPageCount = 1
+        }
     }
 
     /// Requests the page after the last loaded one. Calls while that page is loading are ignored.

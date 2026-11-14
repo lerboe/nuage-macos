@@ -74,13 +74,25 @@ final class Library {
 
     static func forgetUser() {
         UserDefaults.standard.removeObject(forKey: userKey)
+
+        // The cached responses belong to the user
+        if let cache = SoundCloud.shared.cache {
+            Task { await cache.removeAll() }
+        }
     }
 
     // MARK: - Loading
 
+    // Each loads the cached content first, so that it's shown until the fresh content is loaded.
+
     private func reloadPlaylists() async {
+        let load = { try await SoundCloud.shared.get(all: .library()).map { $0.item } }
+        if playlists.isEmpty, let cachedPlaylists = try? await cached(load) {
+            playlists = cachedPlaylists
+        }
+
         do {
-            playlists = try await SoundCloud.shared.get(all: .library()).map { $0.item }
+            playlists = try await refreshed(load)
         }
         catch {
             guard !Task.isCancelled else { return }
@@ -89,8 +101,13 @@ final class Library {
     }
 
     private func reloadLikes(of user: User) async {
+        let load = { try await SoundCloud.shared.get(all: .trackLikes(of: user)).map { $0.item } }
+        if likes.isEmpty, let cachedLikes = try? await cached(load) {
+            likes = cachedLikes
+        }
+
         do {
-            likes = try await SoundCloud.shared.get(all: .trackLikes(of: user)).map { $0.item }
+            likes = try await refreshed(load)
         }
         catch {
             guard !Task.isCancelled else { return }
@@ -99,8 +116,13 @@ final class Library {
     }
 
     private func reloadPosts(of user: User) async {
+        let load = { try await SoundCloud.shared.get(all: .stream(of: user)) }
+        if posts.isEmpty, let cachedPosts = try? await cached(load) {
+            posts = cachedPosts
+        }
+
         do {
-            posts = try await SoundCloud.shared.get(all: .stream(of: user))
+            posts = try await refreshed(load)
         }
         catch {
             guard !Task.isCancelled else { return }

@@ -15,6 +15,11 @@ private let accessTokenExpiryDateKey = "accessTokenExpiryDate"
 /// Keys of a library cache that was never read back successfully, see `NuageApp.init`.
 private let legacyCacheKeys = ["playlists", "likes", "posts"]
 
+/// Cached responses that weren't used for this long are deleted.
+private let responseCacheMaxAge: TimeInterval = 7*24*60*60
+/// The least recently used responses are deleted when the cache grows beyond this size in bytes.
+private let responseCacheMaxSize = 50*1024*1024
+
 private struct ShowCreatedPlaylistsKey: EnvironmentKey {
     
     static let defaultValue = true
@@ -282,6 +287,12 @@ struct NuageApp: App {
     init() {
         let MB = 1024*1024
         URLCache.shared = URLCache(memoryCapacity: 10*MB, diskCapacity: 20*MB)
+
+        // Shows the content right away when a window appears, until it's reloaded
+        let cacheDirectory = URL.cachesDirectory.appending(path: "Responses", directoryHint: .isDirectory)
+        SoundCloud.shared.cache = ResponseCache(directory: cacheDirectory,
+                                                maxAge: responseCacheMaxAge,
+                                                maxSize: responseCacheMaxSize)
         
         let defaults = UserDefaults.standard
         
