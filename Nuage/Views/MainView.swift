@@ -19,7 +19,6 @@ struct MainView: View {
     @State private var blockingNavigationPath: NavigationPath?
     
     @State private var searchQuery = ""
-    @FocusState private var isSearchFocused: Bool
 
     @Environment(MenuCommands.self) private var menuCommands
     @Environment(StreamPlayer.self) private var player
@@ -74,10 +73,12 @@ struct MainView: View {
         }
         .animation(.spring(duration: 0.35), value: isPlayerVisible)
         .toolbarRole(.editor)
-        .searchable(text: $searchQuery, placement: .toolbarPrincipal)
-        .searchFocused($isSearchFocused)
-        .focusesToolbarSearchFieldOnClick(focus: { isSearchFocused = true }, clear: { searchQuery = "" })
-        .onChange(of: menuCommands.searchRequests) { isSearchFocused = true }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                ToolbarSearchField(text: $searchQuery, focusRequests: menuCommands.searchRequests)
+                    .frame(width: 250)
+            }
+        }
         .onChange(of: search == nil) {
             // Searching shows the filtered main view, so go back to it when a search starts
             if search != nil {
@@ -208,77 +209,63 @@ struct ProfileToolbarItem: ToolbarContent {
     
 }
 
-/// Works around the principal toolbar item being laid out narrower than the search field it draws.
-/// Only clicks within the item's frame reach the field, so clicks on the outer parts of the field
-/// are caught here and focus the field manually, or clear it if they hit the clear button.
-private struct ToolbarSearchFieldClickFocus: ViewModifier {
+/// A search field with a fixed width, unlike the one of `searchable(text:placement:prompt:)`,
+/// which is drawn wider than the toolbar item laid out for it.
+private struct ToolbarSearchField: NSViewRepresentable {
     
-    var focus: () -> Void
-    var clear: () -> Void
-    @State private var monitor: Any?
+    @Binding var text: String
+    /// Focuses the field whenever it changes.
+    var focusRequests: Int
     
-    func body(content: Content) -> some View {
-        content
-            .onAppear {
-                guard monitor == nil else { return }
-                monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
-                    handle(event) ? nil : event
-                }
-            }
-            .onDisappear {
-                if let monitor {
-                    NSEvent.removeMonitor(monitor)
-                }
-                monitor = nil
-            }
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.placeholderString = String(localized: "Search")
+        // Sent while typing and when the field is cleared
+        field.target = context.coordinator
+        field.action = #selector(Coordinator.textDidChange(_:))
+        field.delegate = context.coordinator
+        return field
     }
     
-    /// Returns whether the event was consumed.
-    private func handle(_ event: NSEvent) -> Bool {
-        // The toolbar lives in the window's frame view, the superview of the content view
-        guard let window = event.window,
-              let frameView = window.contentView?.superview,
-              let searchField = frameView.firstDescendant(ofType: NSSearchField.self),
-              !searchField.isHiddenOrHasHiddenAncestor else { return false }
-        
-        let location = searchField.convert(event.locationInWindow, from: nil)
-        guard searchField.bounds.contains(location) else { return false }
-        
-        // Clicks that already reach the field are handled by AppKit
-        if let hitView = frameView.hitTest(event.locationInWindow), hitView.isDescendant(of: searchField) {
-            return false
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        context.coordinator.parent = self
+        if field.stringValue != text {
+            field.stringValue = text
         }
-        
-        if !searchField.stringValue.isEmpty,
-           let cell = searchField.cell as? NSSearchFieldCell,
-           cell.cancelButtonRect(forBounds: searchField.bounds).contains(location) {
-            clear()
+        if focusRequests != context.coordinator.focusRequests {
+            context.coordinator.focusRequests = focusRequests
+            field.window?.makeFirstResponder(field)
         }
-        else {
-            focus()
-        }
-        return true
     }
     
-}
-
-private extension NSView {
-    
-    func firstDescendant<T: NSView>(ofType type: T.Type) -> T? {
-        for subview in subviews {
-            if let match = subview as? T ?? subview.firstDescendant(ofType: type) {
-                return match
-            }
-        }
-        return nil
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
     }
     
-}
-
-private extension View {
-    
-    func focusesToolbarSearchFieldOnClick(focus: @escaping () -> Void, clear: @escaping () -> Void) -> some View {
-        modifier(ToolbarSearchFieldClickFocus(focus: focus, clear: clear))
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        
+        var parent: ToolbarSearchField
+        var focusRequests: Int
+        
+        init(parent: ToolbarSearchField) {
+            self.parent = parent
+            self.focusRequests = parent.focusRequests
+        }
+        
+        @objc func textDidChange(_ field: NSSearchField) {
+            parent.text = field.stringValue
+        }
+        
+        /// Escape clears the field and ends editing, like the field of `searchable(text:placement:prompt:)`.
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard commandSelector == #selector(NSResponder.cancelOperation(_:)) else { return false }
+            
+            control.stringValue = ""
+            parent.text = ""
+            control.window?.makeFirstResponder(nil)
+            return true
+        }
+        
     }
     
 }

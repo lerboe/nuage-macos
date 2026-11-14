@@ -13,6 +13,8 @@ struct UserDetail: View {
     var user: User
     @State private var loadedUser: User?
     @State private var selection: Tab = .stream
+    /// Whether the user's station could be loaded, SoundCloud has none for some users, e.g. ones without tracks.
+    @State private var hasStation = false
     
     var body: some View {
         let currentUser = loadedUser ?? user
@@ -55,14 +57,22 @@ struct UserDetail: View {
                 .id(selection)
         }
         .toolbar {
+            // Placed right after the search field. The item stays in place, since toolbar items
+            // added after the view appeared don't show up.
             ToolbarItem(placement: .secondaryAction) {
-                NavigationLink(value: Station.artist(user)) {
-                    Image(systemName: "dot.radiowaves.left.and.right")
+                if hasStation {
+                    NavigationLink(value: Station.artist(user)) {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                    }
                 }
             }
             ProfileToolbarItem()
         }
         .navigationTitle(user.username)
+        .task {
+            guard !hasStation else { return }
+            hasStation = (try? await SoundCloud.shared.get(.artistStation(basedOn: user))) != nil
+        }
         .task {
             guard loadedUser == nil else { return }
             

@@ -68,6 +68,7 @@ struct TrackDetail: View {
                 }
         }
         .toolbar {
+            // Placed right after the search field
             ToolbarItem(placement: .secondaryAction) {
                 NavigationLink(value: Station.track(track)) {
                     Image(systemName: "dot.radiowaves.left.and.right")
