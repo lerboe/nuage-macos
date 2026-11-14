@@ -22,6 +22,18 @@ private let volumeKey = "volume"
 private let shuffleQueueKey = "shuffleQueue"
 private let repeatQueueKey = "repeatQueue"
 private let playbackRateKey = "playbackRate"
+/// The ID of the Sonos group that was controlled last.
+private let lastSonosGroupKey = "lastSonosGroup"
+/// The tracks sent to the Sonos groups, see `SonosPlayback`.
+private let sonosPlaybacksKey = "sonosPlaybacks"
+
+/// A track sent to a Sonos group, so that it can be recognized when Nuage is launched again.
+private struct SonosPlayback: Codable {
+    var trackID: String
+    /// The path of the URI the speaker plays the track from.
+    var uriPath: String
+    var isRelayed: Bool
+}
 
 @MainActor
 @Observable
@@ -155,6 +167,7 @@ final class StreamPlayer {
     @ObservationIgnored private var sonosSession: SonosSession?
 
     @ObservationIgnored private var nowPlayingTrackID: String?
+    @ObservationIgnored private var didRestoreSonosPlayback = false
 
     // MARK: - Initialization
 
@@ -231,6 +244,16 @@ final class StreamPlayer {
         player.pause()
         player.replaceCurrentItem(with: nil)
 
+        startSonosSession(on: group)
+
+        setProgressWithoutSeeking(position)
+        if wasPlaying {
+            resume()
+        }
+    }
+
+    @discardableResult
+    private func startSonosSession(on group: SonosGroup) -> SonosSession {
         let session = SonosSession(group: group)
         session.onEvent = { [weak self] event in
             self?.handle(event)
@@ -239,11 +262,9 @@ final class StreamPlayer {
         sonosGroup = group
         isPlaying = false
         session.start()
+        UserDefaults.standard.set(group.id, forKey: lastSonosGroupKey)
 
-        setProgressWithoutSeeking(position)
-        if wasPlaying {
-            resume()
-        }
+        return session
     }
 
     /// Continues playback on this Mac and pauses the Sonos group.
@@ -315,11 +336,14 @@ final class StreamPlayer {
                 }
                 guard let self = self, !Task.isCancelled, self.sonosSession === session else { return }
 
-                let info = SonosSession.TrackInfo(title: track.title,
-                                                  artist: track.user.username,
-                                                  artworkURL: track.artworkURL ?? track.user.avatarURL,
-                                                  duration: TimeInterval(track.duration))
-                session.load(trackID: track.id, info: info, source: source, at: position)
+                session.load(trackID: track.id, info: StreamPlayer.sonosInfo(for: track), source: source, at: position)
+                if let uri = session.currentURI {
+                    var isRelayed = false
+                    if case .relay = source {
+                        isRelayed = true
+                    }
+                    self.remember(SonosPlayback(trackID: track.id, uriPath: uri.path, isRelayed: isRelayed), of: track, on: session.group)
+                }
                 self.updateNowPlayingInfo()
             }
             catch {
@@ -328,6 +352,97 @@ final class StreamPlayer {
                 self?.isPlaying = false
             }
         }
+    }
+
+    private static func sonosInfo(for track: Track) -> SonosSession.TrackInfo {
+        return SonosSession.TrackInfo(title: track.title,
+                                      artist: track.user.username,
+                                      artworkURL: track.artworkURL ?? track.user.avatarURL,
+                                      duration: TimeInterval(track.duration))
+    }
+
+    // MARK: - Sonos Restoration
+
+    private func remember(_ playback: SonosPlayback, of track: Track, on group: SonosGroup) {
+        var playbacks = StreamPlayer.sonosPlaybacks
+        playbacks[group.id] = playback
+        if let data = try? JSONEncoder().encode(playbacks) {
+            UserDefaults.standard.set(data, forKey: sonosPlaybacksKey)
+        }
+
+        // Caches the track, so that it's shown right away when it's restored
+        Task {
+            _ = try? await refreshed { try await SoundCloud.shared.get(.tracks([track.id])) }
+        }
+    }
+
+    private static var sonosPlaybacks: [String: SonosPlayback] {
+        guard let data = UserDefaults.standard.data(forKey: sonosPlaybacksKey) else { return [:] }
+        return (try? JSONDecoder().decode([String: SonosPlayback].self, from: data)) ?? [:]
+    }
+
+    /// Shows the SoundCloud track one of `groups` is playing, e.g. after Nuage was quit while playing on Sonos.
+    /// The group controlled last is checked first. This only happens once and only if nothing is playing yet.
+    func restoreSonosPlayback(from groups: [SonosGroup]) async {
+        guard !didRestoreSonosPlayback, !groups.isEmpty else { return }
+        didRestoreSonosPlayback = true
+
+        let lastGroupID = UserDefaults.standard.string(forKey: lastSonosGroupKey)
+        let orderedGroups = groups.filter { $0.id == lastGroupID } + groups.filter { $0.id != lastGroupID }
+        let playbacks = StreamPlayer.sonosPlaybacks
+
+        for group in orderedGroups {
+            let client = SonosClient(baseURL: group.coordinatorURL)
+            guard let state = try? await client.transportState(),
+                  state == .playing || state == .transitioning,
+                  let info = try? await client.positionInfo(),
+                  let (trackID, isRelayed) = StreamPlayer.soundCloudTrack(playingFrom: info.trackURI, playback: playbacks[group.id]) else { continue }
+
+            // Prefers the cache, the track is only loaded if it wasn't cached
+            var tracks = try? await cached { try await SoundCloud.shared.get(.tracks([trackID])) }
+            if tracks?.isEmpty ?? true {
+                tracks = try? await refreshed { try await SoundCloud.shared.get(.tracks([trackID])) }
+            }
+            guard let track = tracks?.first else { continue }
+
+            // The user might have started playing something in the meantime
+            guard queue.isEmpty, sonosSession == nil else { return }
+
+            adopt(track, playingAt: info.position, from: info.trackURI, isRelayed: isRelayed, on: group)
+            return
+        }
+    }
+
+    /// Returns the ID of the SoundCloud track a speaker plays from `uri`, either one sent by Nuage or by the Sonos SoundCloud service.
+    private static func soundCloudTrack(playingFrom uri: String, playback: SonosPlayback?) -> (id: String, isRelayed: Bool)? {
+        if let playback = playback, !playback.uriPath.isEmpty, uri.contains(playback.uriPath) {
+            return (playback.trackID, playback.isRelayed)
+        }
+
+        // The Sonos SoundCloud service (sid 160) plays URIs like `x-sonos-http:track%3a123456.mp3?sid=160`
+        guard uri.contains("sid=160"),
+              let range = uri.range(of: #"track%3a(\d+)"#, options: [.regularExpression, .caseInsensitive]) else { return nil }
+        return (String(uri[range].dropFirst("track%3a".count)), false)
+    }
+
+    /// Continues showing `track`, which the speakers of `group` play from `uri` at `position`.
+    private func adopt(_ track: Track, playingAt position: TimeInterval, from uri: String, isRelayed: Bool, on group: SonosGroup) {
+        let session = startSonosSession(on: group)
+
+        queue = [track]
+        queueOrder = [0]
+        currentStreamIndex = 0
+        setProgressWithoutSeeking(position)
+
+        if isRelayed {
+            // The relay stopped together with the previous launch, the speaker has to request the stream again
+            load(track, on: session, at: position)
+        }
+        else if let url = URL(string: uri) {
+            isPlaying = true
+            session.adopt(trackID: track.id, info: StreamPlayer.sonosInfo(for: track), uri: url)
+        }
+        updateNowPlayingInfo()
     }
 
     // MARK: - Playback

@@ -46,6 +46,8 @@ struct InfiniteGrid<Element: Decodable&Identifiable&Filterable&Hashable, Item: V
                 }
 
                 if let search {
+                    NextPageTrigger(elementCount: elements.count, getNextPage: getNextPage)
+
                     if !displayedElements.isEmpty {
                         SearchSectionFooter()
                     }

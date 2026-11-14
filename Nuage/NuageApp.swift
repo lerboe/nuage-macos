@@ -202,6 +202,12 @@ struct NuageApp: App {
                     sonosBrowser.stop()
                 }
             }
+            // Shows what the speakers are playing, which might have been started before Nuage was quit.
+            // The speakers might only be found later, e.g. once the local network access is granted.
+            .task(id: sonosBrowser.groups) {
+                guard loggedIn, showSonosSpeakers else { return }
+                await player.restoreSonosPlayback(from: sonosBrowser.groups)
+            }
         }
         .defaultSize(width: 800, height: 400)
         // Without it, no window opens at launch if the window was closed before quitting,

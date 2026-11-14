@@ -68,6 +68,8 @@ struct InfiniteList<Element: Decodable&Identifiable&Filterable&Hashable, Row: Vi
                 }
                 
                 if let search {
+                    NextPageTrigger(elementCount: elements.count, getNextPage: getNextPage)
+
                     if !displayedElements.isEmpty {
                         // Every row already ends with a divider
                         SearchSectionFooter(showsDivider: false)
@@ -84,6 +86,24 @@ struct InfiniteList<Element: Decodable&Identifiable&Filterable&Hashable, Row: Vi
     init(source: InfiniteSource<Element>, @ViewBuilder row: @escaping (Element) -> Row) {
         self.source = source
         self.row = row
+    }
+
+}
+
+/// Requests the next page whenever it is visible. While searching, the rows only show the
+/// matching elements, so a loaded page without matches wouldn't make any row appear to request more.
+struct NextPageTrigger: View {
+
+    /// The number of loaded elements, including the ones not matching the search.
+    var elementCount: Int
+    var getNextPage: () -> ()
+
+    var body: some View {
+        Color.clear
+            .frame(height: 1)
+            // A new identity for every loaded page makes `onAppear` fire again if it's still visible
+            .id(elementCount)
+            .onAppear(perform: getNextPage)
     }
 
 }

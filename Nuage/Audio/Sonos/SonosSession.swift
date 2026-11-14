@@ -35,7 +35,8 @@ final class SonosSession {
     private(set) var currentTrackID: String?
     private var currentTrack: TrackInfo?
     private var currentSource: SonosSource?
-    private var currentURI: URL?
+    /// The URI the speaker plays the current track from.
+    private(set) var currentURI: URL?
     /// Whether the speaker started playing the current track, so that a stop means it ended.
     private var didStartCurrentTrack = false
 
@@ -78,6 +79,21 @@ final class SonosSession {
         wantsPlayback = true
         pendingRestartPosition = nil
         restart(at: position)
+    }
+
+    /// Takes over a track the speaker is already playing from `uri`, e.g. one sent to it before Nuage was relaunched.
+    func adopt(trackID: String, info: TrackInfo, uri: URL) {
+        currentTrackID = trackID
+        currentTrack = info
+        // Only HTTP URIs can be handed to the speaker again, others (like the ones of the Sonos
+        // SoundCloud service) need metadata that only the Sonos app knows
+        currentSource = (uri.scheme == "http" || uri.scheme == "https") ? .file(uri) : nil
+        currentURI = uri
+        positionOffset = 0
+        streamDuration = 0
+        pendingRestartPosition = nil
+        wantsPlayback = true
+        didStartCurrentTrack = true
     }
 
     /// Hands the current track to the speaker again, starting at `position`.
@@ -244,7 +260,7 @@ final class SonosSession {
         guard !Task.isCancelled, pendingCommands == 0, generation == commandGeneration else { return }
 
         // The speaker might report the URI in a slightly different form, so only the path is compared
-        let isPlayingCurrentTrack = currentURI.map { currentInfo.trackURI.contains($0.path) } ?? false
+        let isPlayingCurrentTrack = currentURI.map { currentInfo.trackURI.contains($0.path) || currentInfo.trackURI == $0.absoluteString } ?? false
 
         if didStartCurrentTrack && !isPlayingCurrentTrack && !currentInfo.trackURI.isEmpty {
             // Another app took over the speakers
