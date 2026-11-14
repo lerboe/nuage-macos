@@ -5,6 +5,7 @@
 //  Created by Laurin Brandner on 28.07.23.
 //
 
+import SwiftUI
 import SoundCloud
 
 private let userPlaylistSeparator = "@@USERPLAYLIST@@"
@@ -106,4 +107,53 @@ extension SidebarItem: Identifiable {
 enum Station: Hashable {
     case track(Track)
     case artist(User)
+}
+
+extension EnvironmentValues {
+    
+    /// The navigation value of the content that is currently shown, e.g. the user of a profile.
+    @Entry var presentedValue: AnyHashable?
+    
+}
+
+extension View {
+    
+    /// Marks `value` as the content shown by this view, so that links within it don't navigate to it again.
+    func presenting<V: Hashable>(_ value: V) -> some View {
+        environment(\.presentedValue, AnyHashable(value))
+    }
+    
+}
+
+/// A `NavigationLink` that is only added if it doesn't link to the content that is currently shown,
+/// otherwise just its label is shown. This avoids pushing the same content over and over again.
+struct DestinationLink<Value: Hashable, Label: View>: View {
+    
+    private var value: Value
+    private var label: Label
+    
+    @Environment(\.presentedValue) private var presentedValue: AnyHashable?
+    
+    var body: some View {
+        if presentedValue == AnyHashable(value) {
+            label
+        }
+        else {
+            NavigationLink(value: value) { label }
+        }
+    }
+    
+    init(value: Value, @ViewBuilder label: () -> Label) {
+        self.value = value
+        self.label = label()
+    }
+    
+}
+
+extension DestinationLink where Label == Text {
+    
+    init(_ title: String, value: Value) {
+        self.init(value: value) { Text(title) }
+    }
+    
 }

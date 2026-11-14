@@ -33,7 +33,7 @@ struct TrackRow: View {
                         .lineLimit(1)
                 }
                 .buttonStyle(.plain)
-                NavigationLink(track.user.username, value: track.user)
+                DestinationLink(track.user.username, value: track.user)
                     .buttonStyle(.plain)
                 
                 StatsStack(for: track)

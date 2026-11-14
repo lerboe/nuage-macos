@@ -17,7 +17,7 @@ struct UserGrid<Element: Decodable&Identifiable&Filterable&Hashable>: View {
     var body: some View {
         InfiniteGrid(source: source) { users, idx in
             let user = transform(users[idx])
-            NavigationLink(value: user) {
+            DestinationLink(value: user) {
                 UserItem(user: user)
             }
             .buttonStyle(.plain)

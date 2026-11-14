@@ -15,7 +15,7 @@ struct PostRow: View {
     var body: some View {
         VStack(alignment: .leading) {
             HStack(spacing: 10) {
-                NavigationLink(value: post.user) {
+                DestinationLink(value: post.user) {
                     RemoteImage(url: post.user.avatarURL, cornerRadius: 15)
                         .frame(width: 30, height: 30)
                     

@@ -46,6 +46,7 @@ struct MainView: View {
                             TrackList(playlist: playlist)
                                 .navigationTitle(playlist.title)
                                 .toolbar { ProfileToolbarItem() }
+                                .presenting(playlist)
                         }
                         .navigationDestination(for: Station.self) { station in
                             Group {
@@ -55,6 +56,7 @@ struct MainView: View {
                                 }
                             }
                             .toolbar { ProfileToolbarItem() }
+                            .presenting(station)
                         }
                 }
             }
@@ -196,7 +198,7 @@ struct ProfileToolbarItem: ToolbarContent {
     var body: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             if let user = soundCloud.user {
-                NavigationLink(value: user) {
+                DestinationLink(value: user) {
                     RemoteImage(url: user.avatarURL, cornerRadius: 15)
                         .frame(width: 30, height: 30)
                 }

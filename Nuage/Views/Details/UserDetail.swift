@@ -61,7 +61,7 @@ struct UserDetail: View {
             // added after the view appeared don't show up.
             ToolbarItem(placement: .secondaryAction) {
                 if hasStation {
-                    NavigationLink(value: Station.artist(user)) {
+                    DestinationLink(value: Station.artist(user)) {
                         Image(systemName: "dot.radiowaves.left.and.right")
                     }
                 }
@@ -69,6 +69,7 @@ struct UserDetail: View {
             ProfileToolbarItem()
         }
         .navigationTitle(user.username)
+        .presenting(user)
         .task {
             guard !hasStation else { return }
             hasStation = (try? await SoundCloud.shared.get(.artistStation(basedOn: user))) != nil

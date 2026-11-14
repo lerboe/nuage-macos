@@ -93,7 +93,7 @@ struct SearchResults: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(alignment: .top, spacing: 16) {
                             ForEach(users) { user in
-                                NavigationLink(value: user) {
+                                DestinationLink(value: user) {
                                     UserItem(user: user)
                                 }
                                 .buttonStyle(.plain)

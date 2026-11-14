@@ -28,7 +28,7 @@ struct TrackDetail: View {
                 .frame(height: 2)
             
             HStack {
-                NavigationLink(value: track.user) {
+                DestinationLink(value: track.user) {
                     Text(track.user.username)
                         .foregroundColor(.secondary)
                         .font(.title2)
@@ -70,7 +70,7 @@ struct TrackDetail: View {
         .toolbar {
             // Placed right after the search field
             ToolbarItem(placement: .secondaryAction) {
-                NavigationLink(value: Station.track(track)) {
+                DestinationLink(value: Station.track(track)) {
                     Image(systemName: "dot.radiowaves.left.and.right")
                 }
             }
@@ -78,6 +78,7 @@ struct TrackDetail: View {
         }
         .padding(16)
         .navigationTitle(track.title)
+        .presenting(track)
     }
     
 }

@@ -14,7 +14,7 @@ struct CommentRow: View {
     
     var body: some View {
         HStack {
-            NavigationLink(value: comment.user) {
+            DestinationLink(value: comment.user) {
                 RemoteImage(url: comment.user.avatarURL, cornerRadius: 25)
                     .frame(width: 50, height: 50, alignment: .center)
             }

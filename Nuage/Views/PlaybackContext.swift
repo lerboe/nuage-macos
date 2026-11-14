@@ -135,10 +135,17 @@ struct PlaybackNavigationLink<Value, Label> : View where Value: Hashable, Label 
     
     @Environment(\.playbackContext) private var playbackContext: [AnyHashable]
     @Environment(\.onPlay) private var onPlay: () -> ()
+    @Environment(\.presentedValue) private var presentedValue: AnyHashable?
 
     var body: some View {
-        let pathValue = PlaybackPathComponent(value: value, playbackContext: playbackContext, onPlay: onPlay)
-        NavigationLink(value: pathValue) { label }
+        // Don't link to the content that is currently shown
+        if presentedValue == AnyHashable(value) {
+            label
+        }
+        else {
+            let pathValue = PlaybackPathComponent(value: value, playbackContext: playbackContext, onPlay: onPlay)
+            NavigationLink(value: pathValue) { label }
+        }
     }
     
     init(value: Value, @ViewBuilder label: () -> Label) {

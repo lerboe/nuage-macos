@@ -107,7 +107,7 @@ private struct PlaylistCard: View {
     var playlist: AnyPlaylist
 
     var body: some View {
-        NavigationLink(value: playlist) {
+        DestinationLink(value: playlist) {
             VStack(alignment: .leading, spacing: 6) {
                 RemoteImage(url: playlist.artworkURL, cornerRadius: 6)
                     .frame(width: cardWidth, height: cardWidth)
@@ -135,7 +135,7 @@ private struct UserCard: View {
     var user: User
 
     var body: some View {
-        NavigationLink(value: user) {
+        DestinationLink(value: user) {
             VStack(alignment: .leading, spacing: 6) {
                 RemoteImage(url: user.avatarURL, cornerRadius: cardWidth / 2)
                     .frame(width: cardWidth, height: cardWidth)
