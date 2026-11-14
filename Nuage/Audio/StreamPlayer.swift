@@ -123,6 +123,10 @@ final class StreamPlayer {
     @ObservationIgnored private var shouldForwardVolume = true
 
     @ObservationIgnored private var shouldSeek = true
+    /// Identifies the most recent seek, so that only its completion is handled.
+    @ObservationIgnored private var seekGeneration = 0
+    /// While seeking, the player still reports the previous time, which must not override `progress`.
+    @ObservationIgnored private var isSeeking = false
     var progress: TimeInterval = 0.0 {
         didSet {
             guard shouldSeek else { return }
@@ -138,7 +142,7 @@ final class StreamPlayer {
                 sonosSession.seek(to: progress)
             }
             else {
-                player.seek(to: time)
+                seek(to: time)
             }
             updateNowPlayingInfo(with: time)
         }
@@ -175,7 +179,7 @@ final class StreamPlayer {
         let interval = CMTime(value: 1, timescale: 1)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             MainActor.assumeIsolated {
-                guard let self = self, self.sonosSession == nil else { return }
+                guard let self = self, self.sonosSession == nil, !self.isSeeking else { return }
                 self.setProgressWithoutSeeking(time.seconds)
             }
         }
@@ -531,6 +535,34 @@ final class StreamPlayer {
 
         guard let start = start else { return order.shuffled() }
         return [start] + order.filter { $0 != start }.shuffled()
+    }
+
+    /// Seeks the local player to `time`. `progress` keeps the new position while buffering,
+    /// it only jumps back to the actual playback position if the seek fails.
+    private func seek(to time: CMTime) {
+        guard let item = player.currentItem else { return }
+
+        seekGeneration += 1
+        let generation = seekGeneration
+        isSeeking = true
+
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            let finished = await self.player.seek(to: time)
+
+            // A newer seek or another track takes over
+            guard self.seekGeneration == generation else { return }
+            self.isSeeking = false
+            guard self.player.currentItem === item else { return }
+
+            if !finished || item.status == .failed {
+                let currentTime = self.player.currentTime().seconds
+                if currentTime.isFinite {
+                    self.setProgressWithoutSeeking(currentTime)
+                }
+                self.updateNowPlayingInfo()
+            }
+        }
     }
 
     private func setProgressWithoutSeeking(_ progress: TimeInterval) {
